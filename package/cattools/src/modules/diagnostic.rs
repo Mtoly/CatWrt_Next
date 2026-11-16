@@ -230,7 +230,7 @@ pub fn system_debug() -> Result<()> {
 
     // Get LAN IP
     let lan_ip = if let Ok(output) = run_command("uci", &["get", "network.lan.ipaddr"]) {
-        output.trim().to_string()
+        crate::uci::network::first_lan_address(&output).to_string()
     } else {
         "192.168.1.1".to_string()
     };

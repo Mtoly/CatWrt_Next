@@ -5,8 +5,9 @@ pub mod firewall;
 pub mod network;
 pub mod system;
 
-use crate::error::Result;
+use crate::error::{CatoolsError, Result};
 use crate::utils::system::run_command;
+use std::process::Command;
 
 pub struct Uci;
 
@@ -19,6 +20,34 @@ impl Uci {
     pub fn get(&self, path: &str) -> Result<String> {
         let output = run_command("uci", &["get", path])?;
         Ok(output.trim().to_string())
+    }
+
+    pub fn get_optional(&self, path: &str) -> Result<Option<String>> {
+        let command = format!("uci -q get {}", path);
+        let output = Command::new("uci")
+            .args(["-q", "get", path])
+            .output()
+            .map_err(|error| {
+                CatoolsError::CommandError(format!(
+                    "无法执行命令 {}：{}；stderr：无（未启动）",
+                    command, error
+                ))
+            })?;
+        if output.status.success() {
+            return Ok(Some(
+                String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            ));
+        }
+        // Quiet UCI returns 1 with no output when the option is absent.
+        if output.status.code() == Some(1) && output.stdout.is_empty() && output.stderr.is_empty() {
+            return Ok(None);
+        }
+        Err(CatoolsError::CommandError(format!(
+            "命令 {} 退出状态 {}；stderr：{}",
+            command,
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        )))
     }
 
     pub fn set(&self, path: &str, value: &str) -> Result<()> {

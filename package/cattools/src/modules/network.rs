@@ -4,6 +4,7 @@ use crate::config::Config;
 use crate::constants::DEFAULT_IP;
 use crate::error::Result;
 use crate::uci::Uci;
+use crate::uci::network::{lan_prefix, set_lan_address};
 use crate::utils::system::{restart_service, run_command};
 use crate::utils::validation::validate_ip;
 use dialoguer::{Confirm, Input};
@@ -22,7 +23,7 @@ pub fn set_ip_address(config: &Config) -> Result<()> {
 
     // Set IP using UCI
     let uci = Uci::new();
-    uci.set("network.lan.ipaddr", &ip)?;
+    set_lan_address(&uci, &ip, lan_prefix(&uci)?)?;
     uci.commit("network")?;
 
     // Restart network service
@@ -119,7 +120,7 @@ pub fn configure_bypass_gateway() -> Result<()> {
 
     // Configure network
     let uci = Uci::new();
-    uci.set("network.lan.ipaddr", &device_ip)?;
+    set_lan_address(&uci, &device_ip, lan_prefix(&uci)?)?;
     uci.set("network.lan.gateway", &router_ip)?;
     uci.set("network.lan.proto", "static")?;
     uci.set("network.lan.dns", &dns)?;
@@ -196,7 +197,7 @@ pub fn network_wizard() -> Result<()> {
             .default(DEFAULT_IP.to_string())
             .interact_text()?;
         validate_ip(&ip)?;
-        uci.set("network.lan.ipaddr", &ip)?;
+        set_lan_address(&uci, &ip, lan_prefix(&uci)?)?;
         println!("[INFO] IP 地址已设置为: {}", ip);
         ip
     } else {
