@@ -1,0 +1,7 @@
+config catwrt 'update'
+	list url 'https://mtoly.github.io/CatWrt_Next/meta.json'
+	list url 'https://cdn.jsdelivr.net/gh/Mtoly/CatWrt_Next@gh-pages/meta.json'
+
+config catwrt 'repo'
+	option mirror 'vsean'
+	option custom '0'

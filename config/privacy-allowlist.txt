@@ -1,5 +1,6 @@
 # Format: <path-glob>:<regex>  # reason
 # Built-in address exceptions cover the documented default LAN address.
+package/catwrt-base/files/etc/apk/keys/*.pem:^[A-Za-z0-9+/=]+$  # apk signing public key, public by design
 package/cattools/src/constants.rs:^pub const API_UPDATE_URL: &str = "https://api[.]miaoer[.]net[/]api[/]v2[/]snippets[/]catwrt[/]update";$  # upstream cattools: public update API URL, retained for T06
 package/cattools/src/constants.rs:^[[:space:]]+"https://raw[.]githubusercontent[.]com[/]miaoermua[/]cattools[/]main[/]sysupgrade[/]amd64[/]sysup_efi";$  # upstream cattools: public amd64 upgrade script URL, retained for T06
 package/cattools/src/constants.rs:^[[:space:]]+"https://raw[.]githubusercontent[.]com[/]miaoermua[/]cattools[/]main[/]sysupgrade[/]mt7621[/]sysup";$  # upstream cattools: public mt7621 upgrade script URL, retained for T06

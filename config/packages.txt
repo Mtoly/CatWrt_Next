@@ -1,10 +1,13 @@
+# CatWrt Next files and first-boot defaults.
+catwrt-base
+
 # Themes; argon is the default.
 luci-theme-argon
 luci-app-argon-config
 luci-i18n-argon-config-zh-cn
 luci-theme-bootstrap
 
-# LuCI applications and Chinese translations; verify in T03 against the feed.
+# LuCI applications and Chinese translations.
 luci-base
 luci-i18n-base-zh-cn
 luci-app-package-manager
@@ -40,11 +43,9 @@ luci-i18n-vlmcsd-zh-cn
 
 # Built locally, including its Chinese translation.
 luci-app-poweroff
-# verify in T03: confirm whether the local build splits translations.
+# Chinese translation is included in the local build.
 # luci-i18n-poweroff-zh-cn
 
 # Installed but disabled by default by catwrt-base.
 luci-app-openclash
-# verify in T03: OpenClash may bundle translations instead of splitting them.
-# luci-i18n-openclash-zh-cn
 tailscale

@@ -1,0 +1,52 @@
+#!/bin/sh
+
+# base-files owns /etc/banner. Copy ours before the init guard so the banner is
+# restored after every sysupgrade, when this script runs again on a new image.
+if [ -f /usr/share/catwrt/banner ]; then
+	cp /usr/share/catwrt/banner /etc/banner
+fi
+if [ -f /usr/share/catwrt/banner.failsafe ]; then
+	cp /usr/share/catwrt/banner.failsafe /etc/banner.failsafe
+fi
+
+[ "$(uci -q get 'system.@imm_init[0].catwrt_init')" = '1' ] && exit 0
+
+uci set 'system.@system[0].hostname=CatWrt'
+uci set 'network.lan.ipaddr=192.168.1.4'
+
+if [ -d /www/luci-static/argon ]; then
+	uci set 'luci.main.mediaurlbase=/luci-static/argon'
+fi
+
+for service in openclash tailscale zerotier frpc ddns ddns-go; do
+	if [ -f "/etc/init.d/$service" ]; then
+		"/etc/init.d/$service" disable
+	fi
+done
+
+if uci -q get openclash.config >/dev/null; then
+	uci set 'openclash.config.enable=0'
+fi
+
+if uci -q get 'zerotier.@zerotier[0]' >/dev/null; then
+	uci set 'zerotier.@zerotier[0].enabled=0'
+fi
+
+uci -q show ddns | sed -n 's/^\(ddns\.[^.]*\)=service$/\1/p' | while IFS= read -r section; do
+	uci set "$section.enabled=0"
+done
+
+if uci -q get ddns-go.config >/dev/null; then
+	uci set 'ddns-go.config.enabled=0'
+fi
+
+# default-settings-chn selects vsean; leave distfeeds.list unchanged.
+uci set 'catwrt.repo.mirror=vsean'
+
+if ! uci -q get 'system.@imm_init[0]' >/dev/null; then
+	uci add system imm_init >/dev/null
+fi
+uci set 'system.@imm_init[0].catwrt_init=1'
+uci commit
+
+exit 0

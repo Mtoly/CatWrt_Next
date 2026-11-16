@@ -1,0 +1,35 @@
+#!/bin/sh
+
+printf '%s\n' "$*" >>"$TEST_ROOT/uci.log"
+[ "$1" != '-q' ] || shift
+command=$1
+shift
+
+case "$command" in
+get)
+	awk -v key="$1" '
+		index($0, key "=") == 1 {
+			print substr($0, length(key) + 2)
+			found = 1
+			exit
+		}
+		END { if (!found) exit 1 }
+	' "$TEST_ROOT/state"
+	;;
+set)
+	key=${1%%=*}
+	awk -v key="$key" 'index($0, key "=") != 1' "$TEST_ROOT/state" >"$TEST_ROOT/state.next"
+	printf '%s\n' "$1" >>"$TEST_ROOT/state.next"
+	mv "$TEST_ROOT/state.next" "$TEST_ROOT/state"
+	;;
+show)
+	awk -v prefix="$1." 'index($0, prefix) == 1' "$TEST_ROOT/state"
+	;;
+add)
+	[ "$*" = 'system imm_init' ] || exit 1
+	printf '%s\n' 'system.@imm_init[0]=imm_init' >>"$TEST_ROOT/state"
+	printf '%s\n' 'cfg000001'
+	;;
+commit) ;;
+*) exit 1 ;;
+esac
