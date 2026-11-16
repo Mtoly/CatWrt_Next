@@ -14,7 +14,7 @@ use crate::cli::Cli;
 use crate::config::Config;
 use crate::error::{CatoolsError, Result};
 use crate::menu::{Menu, MenuOption, UtilitiesMenuOption};
-use crate::utils::system::{check_openwrt, check_root, patch_banner_domains, patch_catwrt_release};
+use crate::utils::system::{check_openwrt, check_root, patch_catwrt_release};
 
 fn main() -> Result<()> {
     // Check root privileges
@@ -34,7 +34,6 @@ fn main() -> Result<()> {
 
     // Apply system patches
     let _ = patch_catwrt_release();
-    let _ = patch_banner_domains();
 
     // Main loop
     loop {
@@ -95,18 +94,8 @@ fn main() -> Result<()> {
 fn handle_utilities_menu() -> Result<()> {
     loop {
         match Menu::show_utilities()? {
-            UtilitiesMenuOption::ConfigureMihomo => {
-                if let Err(e) = modules::advanced::configure_mihomo() {
-                    eprintln!("错误: {}", e);
-                }
-            }
             UtilitiesMenuOption::ConfigureTailscale => {
                 if let Err(e) = modules::advanced::configure_tailscale() {
-                    eprintln!("错误: {}", e);
-                }
-            }
-            UtilitiesMenuOption::ConfigureLeigod => {
-                if let Err(e) = modules::advanced::configure_leigod() {
                     eprintln!("错误: {}", e);
                 }
             }
@@ -115,8 +104,8 @@ fn handle_utilities_menu() -> Result<()> {
                     eprintln!("错误: {}", e);
                 }
             }
-            UtilitiesMenuOption::InstallIpk => {
-                if let Err(e) = modules::package::install_ipk() {
+            UtilitiesMenuOption::InstallApk => {
+                if let Err(e) = modules::package::install_apk() {
                     eprintln!("错误: {}", e);
                 }
             }

@@ -297,15 +297,17 @@ pub fn network_wizard() -> Result<()> {
         println!("[INFO] UPNP 已开启");
     }
 
-    // Step 10: Network interfaces (for amd64/aarch64)
+    // Step 10: Network interfaces (for x86_64/amd64/aarch64)
     let arch_result = std::fs::read_to_string("/etc/catwrt_release");
     if let Ok(content) = arch_result
-        && (content.contains("arch=amd64") || content.contains("arch=aarch64_generic"))
+        && (content.contains("arch=x86_64")
+            || content.contains("arch=amd64")
+            || content.contains("arch=aarch64_generic"))
     {
         println!("\n[Step10] 配置网口");
         if iface_count > 2
             && Confirm::new()
-                .with_prompt("是否配置网口？(eth0=WAN, 其他=LAN)")
+                .with_prompt("是否配置网口？(eth1=WAN, eth0 及其他网口=LAN)")
                 .default(false)
                 .interact()?
         {
@@ -338,27 +340,26 @@ pub fn configure_network_interfaces() -> Result<()> {
         .collect();
 
     let mut bridge_ports = Vec::new();
+    if !interfaces.contains(&"eth1") {
+        return Err(crate::error::CatoolsError::ValidationError(
+            "未找到 WAN 网口 eth1，无法配置网口".to_string(),
+        ));
+    }
     for iface in &interfaces {
-        if *iface != "eth0" {
+        if *iface != "eth1" {
             bridge_ports.push(*iface);
         }
     }
 
     let uci = Uci::new();
-    uci.set("network.wan.ifname", "eth0")?;
+    crate::uci::network::set_wan_interface(&uci, "eth1")?;
     uci.set("network.wan.proto", "dhcp")?;
-    uci.set("network.lan.type", "bridge")?;
-    uci.set("network.lan.ifname", &bridge_ports.join(" "))?;
-    uci.set("network.lan._orig_ifname", &bridge_ports.join(" "))?;
-    uci.set("network.lan._orig_bridge", "true")?;
-    uci.set("network.wan6._orig_bridge", "false")?;
-    uci.set("network.wan6._orig_ifname", "eth1")?;
-    uci.set("network.wan6.ifname", "eth0")?;
+    crate::uci::network::bridge_interfaces(&uci, &bridge_ports)?;
     uci.set("network.wan6.reqaddress", "try")?;
     uci.set("network.wan6.reqprefix", "auto")?;
 
     println!(
-        "[Step10] 网口已配置: WAN (ETH0), LAN ({})",
+        "[Step10] 网口已配置: WAN (eth1), LAN ({})",
         bridge_ports.join(" ")
     );
     Ok(())

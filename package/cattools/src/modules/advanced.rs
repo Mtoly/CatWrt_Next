@@ -2,67 +2,18 @@
 
 use crate::error::Result;
 use crate::uci::Uci;
-use crate::utils::system::{download_to_file, restart_service, run_command, run_shell};
+use crate::utils::apk;
+use crate::utils::system::{restart_service, run_command, run_shell};
 use dialoguer::{Confirm, Input};
 use std::fs;
 use std::path::Path;
-
-/// Configure Mihomo (Clash Meta) kernel
-pub fn configure_mihomo() -> Result<()> {
-    println!("\n配置 Mihomo 内核");
-    println!("Mihomo 是 Clash Meta 的开源内核，用于 OpenClash");
-
-    // Detect architecture
-    let release_content =
-        fs::read_to_string("/etc/catwrt_release").unwrap_or_else(|_| "arch=amd64".to_string());
-
-    let arch = release_content
-        .lines()
-        .find(|line| line.starts_with("arch="))
-        .and_then(|line| line.split('=').nth(1))
-        .unwrap_or("amd64");
-
-    // Map architecture to Mihomo arch naming
-    let mihomo_arch = match arch {
-        "amd64" => "amd64",
-        "mt7621" => "mipsle-softfloat",
-        "mt798x" => "armv8",
-        "rkarm" => "armv8",
-        _ => {
-            println!("[ERROR] 不支持的架构: {}", arch);
-            return Ok(());
-        }
-    };
-
-    println!("检测到架构: {} (Mihomo: {})", arch, mihomo_arch);
-
-    // Download Mihomo kernel
-    let download_url = format!(
-        "https://raw.miaoer.net/Meta-Kernel/{}/clash.meta",
-        mihomo_arch
-    );
-
-    println!("\n下载 Mihomo 内核...");
-    let kernel_path = "/tmp/clash.meta";
-    download_to_file(&download_url, kernel_path)?;
-
-    // Make executable
-    run_command("chmod", &["+x", kernel_path])?;
-
-    println!("✓ Mihomo 内核下载完成");
-    println!("\n内核文件保存在: {}", kernel_path);
-    println!("请手动将其复制到 OpenClash 的内核目录");
-    println!("通常位于: /etc/openclash/core/");
-
-    Ok(())
-}
 
 /// Configure Tailscale
 pub fn configure_tailscale() -> Result<()> {
     println!("\n配置 Tailscale");
 
     // Check if tailscale is installed
-    if run_command("which", &["tailscale"]).is_err() {
+    if !apk::is_installed("tailscale")? {
         println!("Tailscale 未安装");
 
         if Confirm::new()
@@ -71,8 +22,8 @@ pub fn configure_tailscale() -> Result<()> {
             .interact()?
         {
             println!("\n安装 Tailscale...");
-            run_command("opkg", &["update"])?;
-            run_command("opkg", &["install", "tailscale"])?;
+            apk::update()?;
+            apk::add(&["tailscale"])?;
             println!("✓ Tailscale 安装完成");
         } else {
             return Ok(());
@@ -89,38 +40,6 @@ pub fn configure_tailscale() -> Result<()> {
     run_command("tailscale", &["up"])?;
 
     println!("\n✓ Tailscale 配置完成");
-
-    Ok(())
-}
-
-/// Configure Leigod (Thunder Game Accelerator)
-pub fn configure_leigod() -> Result<()> {
-    println!("\n配置雷神加速器");
-
-    // Check dependencies
-    let dependencies = ["kmod-tun", "iptables-mod-extra", "wget-ssl"];
-
-    println!("检查依赖...");
-    for dep in &dependencies {
-        if run_command("opkg", &["list-installed", dep]).is_err() {
-            println!("安装依赖: {}", dep);
-            run_command("opkg", &["install", dep])?;
-        }
-    }
-
-    // Download and run install script
-    println!("\n下载安装脚本...");
-    let script_url = "https://leigod.cdn.legdun.com/download/lgdrelease/shell/leigod_install.sh";
-    let script_path = "/tmp/leigod_install.sh";
-    download_to_file(script_url, script_path)?;
-
-    run_command("chmod", &["+x", script_path])?;
-
-    println!("\n运行安装脚本...");
-    run_command("sh", &[script_path])?;
-
-    println!("\n✓ 雷神加速器安装完成");
-    println!("请访问 LuCI 界面进行配置");
 
     Ok(())
 }

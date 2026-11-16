@@ -19,11 +19,9 @@ pub enum MenuOption {
 
 #[derive(Debug, Clone)]
 pub enum UtilitiesMenuOption {
-    ConfigureMihomo,
     ConfigureTailscale,
-    ConfigureLeigod,
     ConfigureTtyd,
-    InstallIpk,
+    InstallApk,
     DeploySslCert,
     ResetPassword,
     SystemReset,
@@ -71,11 +69,9 @@ impl Menu {
 
     pub fn show_utilities() -> Result<UtilitiesMenuOption> {
         let options = [
-            "Mihomo 内核安装",
             "Tailscale 配置",
-            "雷神加速器配置",
             "TTYD 免密登录",
-            "IPK 安装",
+            "本地 APK 安装",
             "SSL 证书部署",
             "重置 root 密码",
             "系统重置",
@@ -90,15 +86,13 @@ impl Menu {
             .map_err(|e| crate::error::CatoolsError::IoError(std::io::Error::other(e)))?;
 
         Ok(match selection {
-            0 => UtilitiesMenuOption::ConfigureMihomo,
-            1 => UtilitiesMenuOption::ConfigureTailscale,
-            2 => UtilitiesMenuOption::ConfigureLeigod,
-            3 => UtilitiesMenuOption::ConfigureTtyd,
-            4 => UtilitiesMenuOption::InstallIpk,
-            5 => UtilitiesMenuOption::DeploySslCert,
-            6 => UtilitiesMenuOption::ResetPassword,
-            7 => UtilitiesMenuOption::SystemReset,
-            8 => UtilitiesMenuOption::Back,
+            0 => UtilitiesMenuOption::ConfigureTailscale,
+            1 => UtilitiesMenuOption::ConfigureTtyd,
+            2 => UtilitiesMenuOption::InstallApk,
+            3 => UtilitiesMenuOption::DeploySslCert,
+            4 => UtilitiesMenuOption::ResetPassword,
+            5 => UtilitiesMenuOption::SystemReset,
+            6 => UtilitiesMenuOption::Back,
             _ => UtilitiesMenuOption::Back,
         })
     }

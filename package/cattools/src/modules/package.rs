@@ -1,8 +1,9 @@
 /* src/modules/package.rs */
 
-use crate::constants::{BACKUP_FILE, BETA_MIRROR_OPTIONS, COMMON_PACKAGES, MIRROR_OPTIONS};
+use crate::constants::{BACKUP_FILE, BETA_MIRROR_OPTIONS, MIRROR_OPTIONS};
 use crate::error::Result;
-use crate::utils::system::{download_text, download_to_file, run_command, url_exists};
+use crate::utils::apk;
+use crate::utils::system::{download_text, url_exists};
 use crate::{api::repo::fetch_repo_source, constants::BASE_REPO_URL};
 use dialoguer::{Confirm, Input, Select};
 use std::collections::HashSet;
@@ -75,7 +76,6 @@ pub fn apply_repo() -> Result<()> {
 
         match selection {
             0 => {
-                println!("以赞助我们并获取支持代码，请访问链接: https://www.miaoer.net/sponsor");
                 let code: String = Input::new().with_prompt("请输入支持代码").interact_text()?;
 
                 if code != "cat666" {
@@ -118,7 +118,7 @@ pub fn apply_repo() -> Result<()> {
     apply_repo_with_url(&conf_url)?;
 
     println!("✓ 软件源配置已完成！");
-    println!("  可以使用 opkg install <pkg> 来安装插件/组件/内核模块");
+    println!("  可以使用 apk add <pkg> 来安装插件/组件/内核模块");
 
     Ok(())
 }
@@ -127,13 +127,11 @@ fn apply_repo_with_url(conf_url: &str) -> Result<()> {
     let config_content = download_text(conf_url)
         .map_err(|e| crate::error::CatoolsError::ApiError(format!("下载配置失败: {}", e)))?;
 
-    fs::write("/etc/opkg/distfeeds.conf", config_content)?;
-
-    let _ = fs::remove_file("/var/lock/opkg.lock");
-    let _ = fs::remove_file("/var/opkg-lists/istore_compat");
+    fs::create_dir_all("/etc/apk/repositories.d")?;
+    fs::write("/etc/apk/repositories.d/distfeeds.list", config_content)?;
 
     println!("[INFO] 更新软件源索引...");
-    run_command("opkg", &["update"])?;
+    apk::update()?;
 
     Ok(())
 }
@@ -142,27 +140,24 @@ fn apply_repo_with_url(conf_url: &str) -> Result<()> {
 pub fn backup_packages() -> Result<()> {
     println!("\n备份软件包...");
 
-    // Get installed packages
-    let output = run_command("opkg", &["list-installed"])?;
-    let installed: HashSet<String> = output
-        .lines()
-        .filter_map(|line| line.split_whitespace().next())
-        .map(|s| s.to_string())
-        .collect();
+    // Preserve the complete world file, including constraints and repository tags.
+    let content = fs::read_to_string(apk::WORLD_FILE)?;
+    let count = apk::parse_world(&content).len();
+    fs::write(BACKUP_FILE, content)?;
 
-    // Filter common packages
-    let mut to_backup = Vec::new();
-    for pkg in COMMON_PACKAGES {
-        if installed.contains(*pkg) {
-            to_backup.push(*pkg);
-        }
-    }
-
-    // Write backup
-    fs::write(BACKUP_FILE, to_backup.join("\n"))?;
-
-    println!("✓ 已备份 {} 个软件包到 {}", to_backup.len(), BACKUP_FILE);
+    println!("✓ 已备份 {} 个软件包到 {}", count, BACKUP_FILE);
     Ok(())
+}
+
+fn missing_packages(backup_content: &str, installed: Vec<String>) -> Vec<String> {
+    let installed: HashSet<String> = installed.into_iter().collect();
+    let mut missing: Vec<String> = apk::parse_world(backup_content)
+        .into_iter()
+        .filter(|name| !installed.contains(name))
+        .collect();
+    missing.sort();
+    missing.dedup();
+    missing
 }
 
 /// Restore packages
@@ -170,29 +165,10 @@ pub fn restore_packages() -> Result<()> {
     println!("\n恢复软件包...");
 
     // Read backup
-    let backup_content = fs::read_to_string(BACKUP_FILE).map_err(|_| {
-        crate::error::CatoolsError::IoError(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "备份文件不存在",
-        ))
-    })?;
-
-    let backup_pkgs: HashSet<String> = backup_content
-        .lines()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    // Get installed
-    let output = run_command("opkg", &["list-installed"])?;
-    let installed: HashSet<String> = output
-        .lines()
-        .filter_map(|line| line.split_whitespace().next())
-        .map(|s| s.to_string())
-        .collect();
+    let backup_content = fs::read_to_string(BACKUP_FILE)?;
 
     // Calculate missing
-    let missing: Vec<String> = backup_pkgs.difference(&installed).cloned().collect();
+    let missing = missing_packages(&backup_content, apk::installed_names()?);
 
     if missing.is_empty() {
         println!("✓ 所有软件包都已安装，无需恢复");
@@ -215,13 +191,8 @@ pub fn restore_packages() -> Result<()> {
 
     // Install missing packages
     println!("\n开始安装...");
-    for pkg in &missing {
-        print!("安装 {}... ", pkg);
-        match run_command("opkg", &["install", pkg]) {
-            Ok(_) => println!("✓"),
-            Err(_) => println!("✗ (跳过)"),
-        }
-    }
+    let packages: Vec<&str> = missing.iter().map(String::as_str).collect();
+    apk::add(&packages)?;
 
     println!("\n✓ 软件包恢复完成！");
     Ok(())
@@ -246,11 +217,11 @@ pub fn package_backup_restore_menu() -> Result<()> {
     Ok(())
 }
 
-/// Install IPK
-pub fn install_ipk() -> Result<()> {
-    println!("\nIPK 安装");
+/// Install an explicitly selected local APK.
+pub fn install_apk() -> Result<()> {
+    println!("\n本地 APK 安装");
 
-    let options = ["本地文件", "URL 下载", "返回"];
+    let options = ["选择本地 .apk 文件", "返回"];
     let selection = Select::new()
         .with_prompt("请选择安装方式")
         .items(&options)
@@ -261,41 +232,35 @@ pub fn install_ipk() -> Result<()> {
         0 => {
             // Local file
             let path: String = Input::new()
-                .with_prompt("请输入 IPK 文件路径")
+                .with_prompt("请输入本地 APK 文件路径（允许安装未签名的软件包）")
                 .interact_text()?;
-
-            if !std::path::Path::new(&path).exists() {
-                println!("[ERROR] 文件不存在: {}", path);
-                return Ok(());
-            }
 
             println!("安装 {}...", path);
-            run_command("opkg", &["install", &path])?;
+            apk::add_local(&path)?;
             println!("✓ 安装完成");
         }
-        1 => {
-            // URL download
-            let url: String = Input::new()
-                .with_prompt("请输入 IPK 文件 URL")
-                .interact_text()?;
-
-            let filename = url.split('/').next_back().unwrap_or("package.ipk");
-            let tmp_path = format!("/tmp/{}", filename);
-
-            println!("下载 {}...", url);
-            download_to_file(&url, &tmp_path)?;
-
-            println!("安装 {}...", filename);
-            run_command("opkg", &["install", &tmp_path])?;
-
-            // Clean up
-            let _ = fs::remove_file(&tmp_path);
-
-            println!("✓ 安装完成");
-        }
-        2 => {}
+        1 => {}
         _ => {}
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::missing_packages;
+    use crate::utils::apk::parse_world;
+
+    #[test]
+    fn restore_only_missing_world_names() {
+        assert_eq!(
+            missing_packages(
+                "tailscale@testing>=1 curl=2 tcpdump~3 curl=2\n# backup\n",
+                parse_world("tailscale=4 base-files")
+            ),
+            vec!["curl", "tcpdump"]
+        );
+        assert!(missing_packages("curl=2", parse_world("curl=3")).is_empty());
+        assert!(missing_packages("# empty backup", parse_world("curl")).is_empty());
+    }
 }

@@ -1,6 +1,7 @@
 /* src/modules/diagnostic.rs */
 
 use crate::error::Result;
+use crate::utils::apk;
 use crate::utils::system::run_command;
 use std::fs;
 
@@ -12,7 +13,7 @@ fn now_string() -> String {
 
 /// Network diagnostic
 pub fn network_diagnostic() -> Result<()> {
-    println!("\n{} - Starting CatWrt Network Diagnostics", now_string());
+    println!("\n{} - CatWrt Next Network Diagnostics", now_string());
     println!();
 
     // Ping test
@@ -97,7 +98,7 @@ pub fn network_diagnostic() -> Result<()> {
     println!();
 
     println!("{} - Network check completed!", now_string());
-    println!("CatWrt Network Diagnostics by @miaoermua");
+    println!("CatWrt Next Network Diagnostics");
 
     Ok(())
 }
@@ -149,8 +150,9 @@ pub fn system_debug() -> Result<()> {
     // Installed packages
     log_content.push_str("## Application\n");
     log_content.push_str("==========\n");
-    if let Ok(output) = run_command("opkg", &["list-installed"]) {
-        log_content.push_str(&output);
+    match apk::installed_names() {
+        Ok(names) => log_content.push_str(&names.join("\n")),
+        Err(e) => log_content.push_str(&format!("读取软件包列表失败: {}", e)),
     }
     log_content.push('\n');
 
@@ -206,11 +208,9 @@ pub fn system_debug() -> Result<()> {
     // Firewall
     log_content.push_str("## Firewall\n");
     log_content.push_str("==========\n");
-    if let Ok(output) = run_command("iptables", &["-L", "-v", "-n"]) {
-        log_content.push_str(&output);
-    }
-    if let Ok(output) = run_command("ip6tables", &["-L", "-v", "-n"]) {
-        log_content.push_str(&output);
+    match run_command("nft", &["list", "ruleset"]) {
+        Ok(output) => log_content.push_str(&output),
+        Err(e) => log_content.push_str(&format!("读取防火墙规则失败: {}", e)),
     }
     log_content.push('\n');
 
@@ -246,9 +246,7 @@ pub fn system_debug() -> Result<()> {
     println!("日志已收集到 /www/logs.txt");
     println!("如果你使用 PPPoE 拨号请手动将宽带账密删除，再使用以下链接上传 Github issues 附件!");
     println!();
-    println!(
-        "https://github.com/miaoermua/CatWrt/issues/new?assignees=&labels=bug&projects=&template=report.yaml"
-    );
+    println!("https://github.com/Mtoly/CatWrt_Next/issues/new");
     println!("尽可能使用 Github 提交你的问题");
     println!();
 

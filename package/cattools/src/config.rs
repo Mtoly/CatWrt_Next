@@ -18,7 +18,7 @@ impl Default for Config {
             mirror_priority: vec![
                 "netlify".to_string(),
                 "github".to_string(),
-                "miaoer".to_string(),
+                "vsean".to_string(),
             ],
             default_ip: "192.168.1.4".to_string(),
             beta_channel: false,

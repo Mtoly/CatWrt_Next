@@ -38,8 +38,8 @@ pub fn run_command(cmd: &str, args: &[&str]) -> Result<String> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(CatoolsError::CommandError(format!(
-            "Command {} failed: {}",
-            cmd, stderr
+            "命令 {} 退出状态 {}: {}",
+            cmd, output.status, stderr
         )));
     }
 
@@ -55,14 +55,6 @@ pub fn download_text(url: &str) -> Result<String> {
         .or_else(|_| run_command("wget", &["-qO-", url]))
         .or_else(|_| run_command("curl", &["-fsSL", url]))
         .map_err(|e| CatoolsError::ApiError(format!("下载失败: {}", e)))
-}
-
-pub fn download_to_file(url: &str, path: &str) -> Result<()> {
-    run_command("uclient-fetch", &["-qO", path, url])
-        .or_else(|_| run_command("wget", &["-qO", path, url]))
-        .or_else(|_| run_command("curl", &["-fsSL", "-o", path, url]))
-        .map_err(|e| CatoolsError::ApiError(format!("下载失败: {}", e)))?;
-    Ok(())
 }
 
 pub fn url_exists(url: &str) -> bool {
@@ -88,15 +80,6 @@ pub fn url_exists(url: &str) -> bool {
 
 pub fn restart_service(service: &str) -> Result<()> {
     run_command("/etc/init.d", &[service, "restart"])?;
-    Ok(())
-}
-
-pub fn patch_banner_domains() -> Result<()> {
-    let banner_path = "/etc/banner";
-    if let Ok(content) = std::fs::read_to_string(banner_path) {
-        let new_content = content.replace("miaoer.xyz", "miaoer.net");
-        std::fs::write(banner_path, new_content)?;
-    }
     Ok(())
 }
 
