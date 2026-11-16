@@ -1,138 +1,240 @@
 /* src/modules/package.rs */
 
-use crate::constants::{BACKUP_FILE, BETA_MIRROR_OPTIONS, MIRROR_OPTIONS};
-use crate::error::Result;
+use crate::constants::BACKUP_FILE;
+use crate::error::{CatoolsError, Result};
+use crate::modules::repo::{
+    MIRRORS, current_base, detect_base, enable_own_repo, rewrite_feeds, validate_custom_url,
+};
+use crate::uci::Uci;
 use crate::utils::apk;
-use crate::utils::system::{download_text, url_exists};
-use crate::{api::repo::fetch_repo_source, constants::BASE_REPO_URL};
+use crate::utils::system::run_command;
 use dialoguer::{Confirm, Input, Select};
 use std::collections::HashSet;
 use std::fs;
+use std::io::Write;
+use std::path::Path;
 
-/// Apply repository configuration
-pub fn apply_repo() -> Result<()> {
-    println!("\n软件源配置");
+const DISTFEEDS: &str = "/etc/apk/repositories.d/distfeeds.list";
+const DISTFEEDS_BACKUP: &str = "/etc/apk/repositories.d/distfeeds.list.catwrt.bak";
+const OWN_REPO: &str = "/etc/apk/repositories.d/catwrt.list";
+const OWN_KEY: &str = "/etc/apk/keys/catwrt-next.pem";
 
-    // Read release file
-    let release_content = fs::read_to_string("/etc/catwrt_release")
-        .unwrap_or_else(|_| "arch=amd64\nversion=v25.8".to_string());
+struct RepoUciBackup {
+    catwrt: String,
+    system: String,
+}
 
-    let arch = release_content
-        .lines()
-        .find(|line| line.starts_with("arch="))
-        .and_then(|line| line.split('=').nth(1))
-        .unwrap_or("amd64");
-
-    let version = release_content
-        .lines()
-        .find(|line| line.starts_with("version="))
-        .and_then(|line| line.split('=').nth(1))
-        .unwrap_or("v25.8");
-
-    println!("\n当前架构: {}", arch);
-    println!("当前版本: {}", version);
-
-    let mut repo_url = format!("{}/{}", BASE_REPO_URL, arch);
-    let mut is_beta = version.contains("beta") || version.contains("Beta");
-
-    if let Ok(Some(source)) = fetch_repo_source(arch, version) {
-        repo_url = source.url;
-        is_beta = source.beta;
+impl RepoUciBackup {
+    fn capture() -> Result<Self> {
+        Ok(Self {
+            catwrt: run_command("uci", &["export", "catwrt"])?,
+            system: run_command("uci", &["export", "system"])?,
+        })
     }
 
-    println!("\nINFO ================================================================");
-    println!(
-        "软件源纯属免费分享，但你可以使用免费的境外软件源托管，如果你需要更快的速度请使用主站。"
-    );
-    println!("本人不对所有软件进行保证，我们没有提供第三方商业服务，使用风险需要自行承担。");
-    println!("你需要同意 CatWrt 软件源用户协议，请确认是否继续。");
-    println!("=========================================================================");
+    fn restore(&self) -> Result<()> {
+        let uci = Uci::new();
+        let mut errors = Vec::new();
+        for (config, content) in [("catwrt", &self.catwrt), ("system", &self.system)] {
+            let restore = || -> Result<()> {
+                let path = std::env::temp_dir().join(format!(
+                    "cattools-repo-restore-{}-{}.uci",
+                    std::process::id(),
+                    config
+                ));
+                let mut options = fs::OpenOptions::new();
+                options.write(true).create_new(true);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::OpenOptionsExt;
+                    options.mode(0o600);
+                }
+                let mut file = options.open(&path)?;
+                let result = (|| -> Result<()> {
+                    file.write_all(content.as_bytes())?;
+                    drop(file);
+                    let path = path.to_str().ok_or_else(|| {
+                        CatoolsError::ConfigError("UCI 恢复文件路径不是有效的 UTF-8".into())
+                    })?;
+                    run_command("uci", &["-f", path, "import", config])?;
+                    uci.commit(config)
+                })();
+                let cleanup = fs::remove_file(&path);
+                result?;
+                cleanup?;
+                Ok(())
+            };
+            if let Err(error) = restore() {
+                errors.push(format!("恢复 {} 失败：{}", config, error));
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(CatoolsError::ConfigError(errors.join("；")))
+        }
+    }
+}
 
+fn has_imm_init(export: &str) -> bool {
+    export.lines().any(|line| {
+        let mut fields = line.split_whitespace();
+        fields.next() == Some("config")
+            && fields
+                .next()
+                .is_some_and(|kind| kind.trim_matches(['\'', '"']) == "imm_init")
+    })
+}
+
+fn restore_repo(backup: &RepoUciBackup) -> Result<()> {
+    // Attempt both restores even if one fails, and report every failure.
+    let feeds = fs::copy(DISTFEEDS_BACKUP, DISTFEEDS);
+    let settings = backup.restore();
+    match (feeds, settings) {
+        (Ok(_), Ok(())) => {
+            println!("已恢复软件源文件和 UCI 设置");
+            Ok(())
+        }
+        (feeds, settings) => Err(CatoolsError::ConfigError(format!(
+            "恢复未完成：文件：{}；UCI：{}",
+            feeds.err().map_or_else(|| "成功".into(), |e| e.to_string()),
+            settings
+                .err()
+                .map_or_else(|| "成功".into(), |e| e.to_string())
+        ))),
+    }
+}
+
+/// Configure built-in distribution mirrors or enable the project repository.
+pub fn apply_repo() -> Result<()> {
+    println!("\n软件源配置");
+    let content = fs::read_to_string(DISTFEEDS)?;
+    println!(
+        "当前镜像：{}",
+        detect_base(&content).map_or("未知", |mirror| mirror.label)
+    );
+    let options = ["切换发行版软件源", "启用 CatWrt Next 自有软件源", "返回"];
+    match Select::new()
+        .with_prompt("请选择操作")
+        .items(&options)
+        .default(0)
+        .interact()?
+    {
+        0 => switch_mirror(&content),
+        1 => enable_project_repo(),
+        _ => Ok(()),
+    }
+}
+
+fn switch_mirror(content: &str) -> Result<()> {
+    let from = current_base(content)?;
+    let mut options: Vec<&str> = MIRRORS.iter().map(|mirror| mirror.label).collect();
+    options.extend(["自定义 HTTPS 镜像", "返回"]);
+    let default = detect_base(content)
+        .and_then(|current| MIRRORS.iter().position(|mirror| mirror.key == current.key))
+        .unwrap_or(1);
+    let selection = Select::new()
+        .with_prompt("请选择软件源")
+        .items(&options)
+        .default(default)
+        .interact()?;
+    let (key, base) = if let Some(mirror) = MIRRORS.get(selection) {
+        (mirror.key, mirror.base.to_string())
+    } else if selection == MIRRORS.len() {
+        let input: String = Input::new()
+            .with_prompt("请输入镜像基础地址（例如 https://example.org/mirror）")
+            .interact_text()?;
+        ("custom", validate_custom_url(&input)?)
+    } else {
+        return Ok(());
+    };
+    let rewritten = rewrite_feeds(content, from, &base)?;
+    println!("目标镜像：{}", base);
     if !Confirm::new()
-        .with_prompt("是否继续？")
-        .default(true)
+        .with_prompt("确认切换软件源？")
+        .default(false)
         .interact()?
     {
         println!("已取消");
         return Ok(());
     }
 
-    let conf_file = if is_beta {
-        println!("\n你目前使用的 BETA 版本，只能拉取临时镜像站软件源");
-        let selection = Select::new()
-            .with_prompt("请选择软件源")
-            .items(BETA_MIRROR_OPTIONS)
-            .default(1)
-            .interact()?;
-
-        match selection {
-            0 => "netlify.conf",
-            1 => "vercel.conf",
-            _ => "vercel.conf",
+    let backup = RepoUciBackup::capture()?;
+    fs::copy(DISTFEEDS, DISTFEEDS_BACKUP)?;
+    println!("已备份到 {}", DISTFEEDS_BACKUP);
+    let apply = || -> Result<()> {
+        fs::write(DISTFEEDS, rewritten)?;
+        let uci = Uci::new();
+        uci.set("catwrt.repo.mirror", key)?;
+        uci.set(
+            "catwrt.repo.custom",
+            if key == "custom" { "1" } else { "0" },
+        )?;
+        if key == "custom" {
+            uci.set("catwrt.repo.url", &base)?;
         }
-    } else {
-        println!("\n请选择要使用的软件源:");
-        let selection = Select::new().items(MIRROR_OPTIONS).default(3).interact()?;
-
-        match selection {
-            0 => {
-                let code: String = Input::new().with_prompt("请输入支持代码").interact_text()?;
-
-                if code != "cat666" {
-                    println!("[ERROR] 支持代码无效，请重新选择");
-                    return apply_repo();
-                }
-                "distfeeds.conf"
-            }
-            1 => "github.conf",
-            2 => "cfnetlify.conf",
-            3 => "netlify.conf",
-            4 => "cfvercel.conf",
-            5 => "vercel.conf",
-            _ => "netlify.conf",
+        if !has_imm_init(&backup.system) {
+            run_command("uci", &["add", "system", "imm_init"])?;
         }
+        uci.set("system.@imm_init[0].apk_mirror", &base)?;
+        uci.commit("catwrt")?;
+        uci.commit("system")?;
+        Ok(())
     };
-
-    let conf_url = format!("{}/{}", repo_url.trim_end_matches('/'), conf_file);
-
-    println!("[INFO] 下载配置: {}", conf_url);
-
-    if !url_exists(&conf_url) {
-        if repo_url.contains("/history/") {
-            let fallback_url = format!("{}/{}/{}", BASE_REPO_URL, arch, conf_file);
-            println!("[WARN] 历史源配置不存在，尝试回退: {}", fallback_url);
-            if url_exists(&fallback_url) {
-                println!("[INFO] 使用回退软件源配置");
-                apply_repo_with_url(&fallback_url)?;
-                return Ok(());
-            }
-        }
-
-        return Err(crate::error::CatoolsError::ApiError(format!(
-            "repo conf 不存在: {}",
-            conf_url
-        )));
+    if let Err(error) = apply() {
+        eprintln!("切换失败：{}", error);
+        restore_repo(&backup)?;
+        return Err(error);
     }
 
-    // Download config
-    apply_repo_with_url(&conf_url)?;
-
-    println!("✓ 软件源配置已完成！");
-    println!("  可以使用 apk add <pkg> 来安装插件/组件/内核模块");
-
+    println!("正在执行 apk update...");
+    if let Err(error) = apk::update() {
+        eprintln!("软件源索引更新失败：{}", error);
+        if Confirm::new()
+            .with_prompt("是否恢复备份及原来的 UCI 设置？")
+            .default(true)
+            .interact()?
+        {
+            restore_repo(&backup)?;
+        } else {
+            println!("已保留新软件源及 UCI 设置；备份位于 {}", DISTFEEDS_BACKUP);
+        }
+        return Err(error);
+    }
+    println!("✓ 软件源配置完成，apk update 成功");
     Ok(())
 }
 
-fn apply_repo_with_url(conf_url: &str) -> Result<()> {
-    let config_content = download_text(conf_url)
-        .map_err(|e| crate::error::CatoolsError::ApiError(format!("下载配置失败: {}", e)))?;
-
-    fs::create_dir_all("/etc/apk/repositories.d")?;
-    fs::write("/etc/apk/repositories.d/distfeeds.list", config_content)?;
-
-    println!("[INFO] 更新软件源索引...");
+fn enable_project_repo() -> Result<()> {
+    if !Path::new(OWN_KEY).is_file() {
+        return Err(CatoolsError::ConfigError(format!(
+            "缺少自有软件源公钥 {}，无法启用",
+            OWN_KEY
+        )));
+    }
+    println!("自有软件源可能尚未发布，发布前 apk update 失败属于预期情况。");
+    let content = fs::read_to_string(OWN_REPO)?;
+    let rewritten = enable_own_repo(&content)?;
+    if rewritten
+        .lines()
+        .any(|line| !line.starts_with('#') && (line.contains('<') || line.contains('>')))
+    {
+        return Err(CatoolsError::ConfigError(
+            "自有软件源地址尚未配置，请先将 catwrt.list 中的占位地址替换为已发布的仓库地址".into(),
+        ));
+    }
+    if !Confirm::new()
+        .with_prompt("确认启用 CatWrt Next 自有软件源？")
+        .default(false)
+        .interact()?
+    {
+        println!("已取消");
+        return Ok(());
+    }
+    fs::write(OWN_REPO, rewritten)?;
+    println!("已启用自有软件源，正在执行 apk update...");
     apk::update()?;
-
+    println!("✓ 自有软件源已启用，apk update 成功");
     Ok(())
 }
 
@@ -248,8 +350,19 @@ pub fn install_apk() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::missing_packages;
+    use super::{has_imm_init, missing_packages};
     use crate::utils::apk::parse_world;
+
+    #[test]
+    fn find_existing_imm_init_section_in_uci_export() {
+        assert!(has_imm_init(
+            "package system\n\nconfig imm_init\n\toption apk_mirror 'https://example.org'\n"
+        ));
+        assert!(has_imm_init("config 'imm_init' 'defaults'\n"));
+        assert!(!has_imm_init(
+            "config system\n\toption description 'imm_init'\n"
+        ));
+    }
 
     #[test]
     fn restore_only_missing_world_names() {

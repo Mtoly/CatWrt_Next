@@ -27,7 +27,9 @@ fn check_status(command: &str, output: Output) -> Result<()> {
 }
 
 pub fn update() -> Result<()> {
-    check_status("apk update", execute(&["update"])?)
+    let output = crate::utils::system::run_command("apk", &["update"])?;
+    print!("{}", output);
+    Ok(())
 }
 
 pub fn add(packages: &[&str]) -> Result<()> {

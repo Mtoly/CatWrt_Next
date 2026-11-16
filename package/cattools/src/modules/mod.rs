@@ -4,4 +4,5 @@ pub mod advanced;
 pub mod diagnostic;
 pub mod network;
 pub mod package;
+pub mod repo;
 pub mod update;
