@@ -50,8 +50,47 @@ download() {
 	mv -- "$destination.part" "$destination"
 }
 
+own_package_name() {
+	local filename=${1##*/} name
+	# APK versions start with a digit; split off the optional package release too.
+	[[ $filename =~ ^(.+)-([0-9][A-Za-z0-9._+~]*(-r[0-9]+)?)\.apk$ ]] || return 1
+	name=${BASH_REMATCH[1]}
+	case "$name" in
+	cattools | catwrt-base | luci-app-poweroff | luci-i18n-poweroff-?*) printf '%s\n' "$name" ;;
+	*) return 1 ;;
+	esac
+}
+
+select_export_packages() {
+	local directory=$1 with_poweroff=$2 listing artifact name
+	local -a expected=(cattools catwrt-base) selected=()
+	local -A counts=()
+	if [[ $with_poweroff == 1 ]]; then
+		expected+=(luci-app-poweroff luci-i18n-poweroff-zh-cn)
+	fi
+	[[ -d $directory ]] || fail "find: missing APK directory: $directory"
+	listing=$(find "$directory" -type f -name '*.apk' | sort) || fail "find/sort: failed to list APKs under $directory"
+	while IFS= read -r artifact; do
+		if ! name=$(own_package_name "$artifact"); then
+			continue
+		fi
+		if [[ $with_poweroff != 1 && $name == luci-* ]]; then
+			continue
+		fi
+		counts[$name]=$((${counts[$name]:-0} + 1))
+		[[ ${counts[$name]} == 1 ]] || fail "select_export_packages: duplicate APK for $name under $directory"
+		selected+=("$artifact")
+	done <<<"$listing"
+	for name in "${expected[@]}"; do
+		[[ ${counts[$name]:-0} == 1 ]] || fail "select_export_packages: missing APK for $name under $directory"
+	done
+	printf '%s\n' "${selected[@]}"
+}
+
 self_test() {
-	local fixture selected output checks=0 transport_status=0 response
+	local fixture selected output artifact name checks=0 transport_status=0 response
+	local -a own_apks=(cattools-1.0.1-r1.apk catwrt-base-1-r1.apk
+		luci-app-poweroff-1-r1.apk luci-i18n-poweroff-zh-cn-0.261116.52078.apk)
 	fixture=$(mktemp -d)
 	trap 'rm -rf -- "$fixture"' EXIT
 	printf '%064d *immortalwrt-sdk-25.12.2-x86-64_gcc-test_musl.Linux-x86_64.tar.zst\n' 0 >"$fixture/sums"
@@ -98,6 +137,34 @@ self_test() {
 	[[ $output == *'curl=28; HTTP=000; type=; final=https://example.invalid/sdk'* ]]
 	checks=$((checks + 1))
 	unset -f curl
+	mkdir "$fixture/packages"
+	for artifact in "${own_apks[@]}" cattools-extra-1.apk cattools-foo.apk \
+		luci-base-1.apk ucode-1.apk luci-app-poweroff-ng-1.apk; do
+		: >"$fixture/packages/$artifact"
+	done
+	selected=$(select_export_packages "$fixture/packages" 1)
+	output=$(printf '%s\n' "${own_apks[@]/#/$fixture/packages/}" | sort)
+	[[ $selected == "$output" ]] || fail 'self-test: APK export filter selected the wrong files'
+	checks=$((checks + 1))
+	for artifact in "${own_apks[@]}"; do
+		mv -- "$fixture/packages/$artifact" "$fixture/missing.apk"
+		if output=$(select_export_packages "$fixture/packages" 1 2>&1); then
+			fail "self-test: missing $artifact accepted"
+		fi
+		name=$(own_package_name "$artifact")
+		[[ $output == *"missing APK for $name under $fixture/packages"* ]]
+		mv -- "$fixture/missing.apk" "$fixture/packages/$artifact"
+		checks=$((checks + 1))
+	done
+	selected=$(select_export_packages "$fixture/packages" 0)
+	[[ $selected == "$fixture/packages/cattools-1.0.1-r1.apk"$'\n'"$fixture/packages/catwrt-base-1-r1.apk" ]]
+	checks=$((checks + 1))
+	: >"$fixture/packages/cattools-2-r1.apk"
+	if output=$(select_export_packages "$fixture/packages" 1 2>&1); then
+		fail 'self-test: duplicate own APK accepted'
+	fi
+	[[ $output == *"duplicate APK for cattools under $fixture/packages"* ]]
+	checks=$((checks + 1))
 	rm -rf -- "$fixture"
 	trap - EXIT
 	printf 'build-packages self-test: %d checks passed\n' "$checks"
@@ -241,11 +308,18 @@ cp -a "$repo/package/catwrt-base" "$sdk/package/catwrt/"
 cp "$repo/package/cattools/Makefile" "$wrapper_dir/Makefile"
 cp "$cattools_bin" "$wrapper_dir/cattools"
 packages=(catwrt-base cattools)
+with_poweroff=0
 if [[ -d $repo/package/luci-app-poweroff ]]; then
 	[[ -f $repo/package/luci-app-poweroff/Makefile ]] || fail 'Missing package/luci-app-poweroff/Makefile'
 	cp -a "$repo/package/luci-app-poweroff" "$sdk/package/catwrt/"
 	packages+=(luci-app-poweroff)
-	(cd "$sdk" && ./scripts/feeds update luci && ./scripts/feeds install luci-base)
+	with_poweroff=1
+	(
+		cd "$sdk"
+		./scripts/feeds update base luci || fail "./scripts/feeds update base luci failed in $sdk"
+		./scripts/feeds install -p base ucode libnl-tiny libubox ubus rpcd lua || fail "./scripts/feeds install -p base ucode libnl-tiny libubox ubus rpcd lua failed in $sdk"
+		./scripts/feeds install luci-base || fail "./scripts/feeds install luci-base failed in $sdk"
+	)
 fi
 
 cd "$sdk"
@@ -271,25 +345,32 @@ for package in "${packages[@]}"; do
 	make "${make_args[@]}" "package/$package/clean" V=s
 	make "${make_args[@]}" "package/$package/compile" V=s
 done
-make "${make_args[@]}" package/index V=s
-
 out_dir=$output_path
 mkdir -p -- "$out_dir"
 out_dir=$(cd "$out_dir" && pwd -P)
-package_dir=''
-for package in "${packages[@]}"; do
-	mapfile -t artifacts < <(find "$sdk/bin/packages" -type f -name "$package-*.apk" | sort)
-	[[ ${#artifacts[@]} == 1 ]] || fail "Expected one APK for $package under $sdk/bin/packages; found ${#artifacts[@]}"
-	current_dir=$(dirname -- "${artifacts[0]}")
-	[[ -z $package_dir || $package_dir == "$current_dir" ]] || fail "Packages span multiple SDK repositories: $package_dir and $current_dir"
-	package_dir=$current_dir
-done
-[[ -f $package_dir/packages.adb ]] || fail "Missing signed index: $package_dir/packages.adb"
-# Export the whole indexed repository, so every index entry has an APK beside it.
+selected=$(select_export_packages "$sdk/bin/packages" "$with_poweroff")
+mapfile -t artifacts <<<"$selected"
+host_apk="$sdk/staging_dir/host/bin/apk"
+[[ -x $host_apk ]] || fail "apk mkndx: missing executable: $host_apk"
+[[ -f $sdk/private-key.pem ]] || fail "apk mkndx --sign: missing SDK signing key: $sdk/private-key.pem"
 find "$out_dir" -maxdepth 1 -type f \( -name '*.apk' -o -name packages.adb \) -delete
-find "$package_dir" -maxdepth 1 -type f \( -name '*.apk' -o -name packages.adb \) -exec cp -t "$out_dir" -- {} +
+for artifact in "${artifacts[@]}"; do
+	cp -- "$artifact" "$out_dir/" || fail "cp: failed to export $artifact to $out_dir"
+done
 cp -- "$sdk/public-key.pem" "$out_dir/signing-public-key.pem"
 chmod 644 "$out_dir/signing-public-key.pem"
+# Like the SDK package/index target: the APKs were just signed by this SDK key, so
+# skip the trust check on input and sign the resulting ADB index with the same key.
+(
+	cd "$out_dir"
+	"$host_apk" mkndx --allow-untrusted --sign "$sdk/private-key.pem" \
+		--output packages.adb ./*.apk || fail "$host_apk mkndx failed for $out_dir/packages.adb"
+)
+[[ -s $out_dir/packages.adb ]] || fail "apk mkndx: missing or empty index: $out_dir/packages.adb"
+printf '\n已导出的软件包名称：\n'
+for artifact in "${artifacts[@]}"; do
+	printf '  %s\n' "$(own_package_name "$artifact")"
+done
 printf '\n构建完成（软件包文件名包含版本）：\n'
 for artifact in "$out_dir"/*.apk "$out_dir/packages.adb" "$out_dir/signing-public-key.pem"; do
 	printf '  %s  %s 字节\n' "$(basename -- "$artifact")" "$(stat -c %s "$artifact")"
