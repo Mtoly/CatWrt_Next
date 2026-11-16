@@ -1,7 +1,0 @@
-#!/bin/bash
-
-## Dangerous! this operation does not allow normal users to bypass cattools!
-
-AMD64_EFI_BIOS="https://github.com/miaoermua/CatWrt/releases/download/v24.9/CatWrt.v24.9.amd64-squashfs-combined.img.gz"
-
-sysupgrade -v $AMD64_EFI_BIOS

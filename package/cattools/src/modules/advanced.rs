@@ -2,7 +2,7 @@
 
 use crate::error::Result;
 use crate::uci::Uci;
-use crate::utils::system::{download_to_file, run_command, run_shell, restart_service};
+use crate::utils::system::{download_to_file, restart_service, run_command, run_shell};
 use dialoguer::{Confirm, Input};
 use std::fs;
 use std::path::Path;
@@ -191,12 +191,8 @@ pub fn deploy_ssl_cert() -> Result<()> {
 
     // Find certificate files
     println!("\n查找证书文件...");
-    let list_output = run_command("find", &[extract_dir, "-type", "f"]).or_else(|_| {
-        run_shell(&format!(
-            "busybox find '{}' -type f",
-            extract_dir
-        ))
-    })?;
+    let list_output = run_command("find", &[extract_dir, "-type", "f"])
+        .or_else(|_| run_shell(&format!("busybox find '{}' -type f", extract_dir)))?;
 
     let mut cert_file: Option<String> = None;
     let mut key_file: Option<String> = None;

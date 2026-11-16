@@ -66,7 +66,12 @@ pub fn download_to_file(url: &str, path: &str) -> Result<()> {
 }
 
 pub fn url_exists(url: &str) -> bool {
-    if run_command("curl", &["--output", "/dev/null", "--silent", "--head", "--fail", url]).is_ok() {
+    if run_command(
+        "curl",
+        &["--output", "/dev/null", "--silent", "--head", "--fail", url],
+    )
+    .is_ok()
+    {
         return true;
     }
 

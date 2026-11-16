@@ -39,7 +39,7 @@ pub fn configure_bypass_gateway() -> Result<()> {
     // Get primary router IP
     let router_ip: String = loop {
         let ip: String = Input::new()
-            .with_prompt("请输入主路由的 IP 地址 (如: 192.168.31.1)")
+            .with_prompt("请输入主路由的 IP 地址 (如: 192.168.1.1)")
             .interact_text()?;
 
         if ip.is_empty() {
@@ -299,17 +299,17 @@ pub fn network_wizard() -> Result<()> {
 
     // Step 10: Network interfaces (for amd64/aarch64)
     let arch_result = std::fs::read_to_string("/etc/catwrt_release");
-    if let Ok(content) = arch_result {
-        if content.contains("arch=amd64") || content.contains("arch=aarch64_generic") {
-            println!("\n[Step10] 配置网口");
-            if iface_count > 2
-                && Confirm::new()
-                    .with_prompt("是否配置网口？(eth0=WAN, 其他=LAN)")
-                    .default(false)
-                    .interact()?
-            {
-                configure_network_interfaces()?;
-            }
+    if let Ok(content) = arch_result
+        && (content.contains("arch=amd64") || content.contains("arch=aarch64_generic"))
+    {
+        println!("\n[Step10] 配置网口");
+        if iface_count > 2
+            && Confirm::new()
+                .with_prompt("是否配置网口？(eth0=WAN, 其他=LAN)")
+                .default(false)
+                .interact()?
+        {
+            configure_network_interfaces()?;
         }
     }
 

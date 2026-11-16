@@ -2,11 +2,11 @@
 name = "cattools-rs"
 version = "1.0.1"
 edition = "2024"
-authors = ["miaoermua", "canmi"]
+authors = ["miaoermua", "canmi", "Mtoly"]
 license = "GPL-2.0"
 description = "CatWrt configuration toolbox written in Rust"
-homepage = "https://github.com/miaoermua/cattools"
-repository = "https://github.com/miaoermua/cattools"
+homepage = "https://github.com/Mtoly/CatWrt_Next"
+repository = "https://github.com/Mtoly/CatWrt_Next"
 
 [[bin]]
 name = "cattools"

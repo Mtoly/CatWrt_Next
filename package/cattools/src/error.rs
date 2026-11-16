@@ -3,6 +3,8 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+// Preserve upstream Debug variant names used by main's error output.
+#[allow(clippy::enum_variant_names)]
 pub enum CatoolsError {
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),

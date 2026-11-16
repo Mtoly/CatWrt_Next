@@ -34,7 +34,7 @@ pub struct Menu;
 
 impl Menu {
     pub fn show() -> Result<MenuOption> {
-        let options = vec![
+        let options = [
             "设置 IP 地址",
             "网络向导",
             "软件源配置",
@@ -52,12 +52,7 @@ impl Menu {
             .items(&options)
             .default(0)
             .interact()
-            .map_err(|e| {
-                crate::error::CatoolsError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e,
-                ))
-            })?;
+            .map_err(|e| crate::error::CatoolsError::IoError(std::io::Error::other(e)))?;
 
         Ok(match selection {
             0 => MenuOption::SetIp,
@@ -75,7 +70,7 @@ impl Menu {
     }
 
     pub fn show_utilities() -> Result<UtilitiesMenuOption> {
-        let options = vec![
+        let options = [
             "Mihomo 内核安装",
             "Tailscale 配置",
             "雷神加速器配置",
@@ -92,12 +87,7 @@ impl Menu {
             .items(&options)
             .default(0)
             .interact()
-            .map_err(|e| {
-                crate::error::CatoolsError::IoError(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e,
-                ))
-            })?;
+            .map_err(|e| crate::error::CatoolsError::IoError(std::io::Error::other(e)))?;
 
         Ok(match selection {
             0 => UtilitiesMenuOption::ConfigureMihomo,

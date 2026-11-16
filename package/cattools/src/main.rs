@@ -18,14 +18,12 @@ use crate::utils::system::{check_openwrt, check_root, patch_banner_domains, patc
 
 fn main() -> Result<()> {
     // Check root privileges
-    check_root().map_err(|e| {
-        CatoolsError::CommandError(format!("Root permission check failed: {}", e))
-    })?;
+    check_root()
+        .map_err(|e| CatoolsError::CommandError(format!("Root permission check failed: {}", e)))?;
 
     // Check OpenWrt system
-    check_openwrt().map_err(|e| {
-        CatoolsError::CommandError(format!("OpenWrt system check failed: {}", e))
-    })?;
+    check_openwrt()
+        .map_err(|e| CatoolsError::CommandError(format!("OpenWrt system check failed: {}", e)))?;
 
     // Parse CLI arguments
     let _args = Cli::parse();

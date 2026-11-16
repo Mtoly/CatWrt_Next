@@ -192,10 +192,7 @@ pub fn restore_packages() -> Result<()> {
         .collect();
 
     // Calculate missing
-    let missing: Vec<String> = backup_pkgs
-        .difference(&installed)
-        .map(|s| s.clone())
-        .collect();
+    let missing: Vec<String> = backup_pkgs.difference(&installed).cloned().collect();
 
     if missing.is_empty() {
         println!("✓ 所有软件包都已安装，无需恢复");
@@ -282,7 +279,7 @@ pub fn install_ipk() -> Result<()> {
                 .with_prompt("请输入 IPK 文件 URL")
                 .interact_text()?;
 
-            let filename = url.split('/').last().unwrap_or("package.ipk");
+            let filename = url.split('/').next_back().unwrap_or("package.ipk");
             let tmp_path = format!("/tmp/{}", filename);
 
             println!("下载 {}...", url);

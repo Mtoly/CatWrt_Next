@@ -12,10 +12,7 @@ fn now_string() -> String {
 
 /// Network diagnostic
 pub fn network_diagnostic() -> Result<()> {
-    println!(
-        "\n{} - Starting CatWrt Network Diagnostics",
-        now_string()
-    );
+    println!("\n{} - Starting CatWrt Network Diagnostics", now_string());
     println!();
 
     // Ping test
@@ -33,12 +30,10 @@ pub fn network_diagnostic() -> Result<()> {
         } else {
             println!("[Ping] Network connection failed!");
             // Check PPPoE
-            if let Ok(config) = fs::read_to_string("/etc/config/network") {
-                if config.contains("pppoe") {
-                    println!(
-                        "[PPPoE] Please check if your PPPoE account and password are correct."
-                    );
-                }
+            if let Ok(config) = fs::read_to_string("/etc/config/network")
+                && config.contains("pppoe")
+            {
+                println!("[PPPoE] Please check if your PPPoE account and password are correct.");
             }
             println!();
         }
@@ -81,10 +76,8 @@ pub fn network_diagnostic() -> Result<()> {
     // IPv6
     println!("[IPv6] Checking IPv6 connectivity...");
     let ipv6_result = run_command("curl", &["--silent", "--connect-timeout", "5", "6.ipw.cn"]);
-    if ipv6_result.is_ok() {
-        if let Ok(output) = ipv6_result {
-            println!("CatWrt IPv6 Addr: {}", output.trim());
-        }
+    if let Ok(output) = ipv6_result {
+        println!("CatWrt IPv6 Addr: {}", output.trim());
     } else {
         println!("[IPv6] IPv6 network connection timed out");
     }
@@ -103,10 +96,7 @@ pub fn network_diagnostic() -> Result<()> {
     }
     println!();
 
-    println!(
-        "{} - Network check completed!",
-        now_string()
-    );
+    println!("{} - Network check completed!", now_string());
     println!("CatWrt Network Diagnostics by @miaoermua");
 
     Ok(())
@@ -126,7 +116,7 @@ pub fn system_debug() -> Result<()> {
     // Banner
     if let Ok(banner) = fs::read_to_string("/etc/banner") {
         log_content.push_str(&banner);
-        log_content.push_str("\n");
+        log_content.push('\n');
     }
 
     // Date
@@ -138,7 +128,7 @@ pub fn system_debug() -> Result<()> {
     if let Ok(release) = fs::read_to_string("/etc/catwrt_release") {
         log_content.push_str(&release);
     }
-    log_content.push_str("\n");
+    log_content.push('\n');
 
     // Memory usage
     log_content.push_str("## Memory Usage\n");
@@ -146,7 +136,7 @@ pub fn system_debug() -> Result<()> {
     if let Ok(output) = run_command("free", &["-h"]) {
         log_content.push_str(&output);
     }
-    log_content.push_str("\n");
+    log_content.push('\n');
 
     // Disk usage
     log_content.push_str("## Disk Usage\n");
@@ -154,7 +144,7 @@ pub fn system_debug() -> Result<()> {
     if let Ok(output) = run_command("df", &["-h"]) {
         log_content.push_str(&output);
     }
-    log_content.push_str("\n");
+    log_content.push('\n');
 
     // Installed packages
     log_content.push_str("## Application\n");
@@ -162,7 +152,7 @@ pub fn system_debug() -> Result<()> {
     if let Ok(output) = run_command("opkg", &["list-installed"]) {
         log_content.push_str(&output);
     }
-    log_content.push_str("\n");
+    log_content.push('\n');
 
     // System log
     log_content.push_str("## SYSLOG\n");
@@ -170,7 +160,7 @@ pub fn system_debug() -> Result<()> {
     if let Ok(output) = run_command("logread", &[]) {
         log_content.push_str(&output);
     }
-    log_content.push_str("\n");
+    log_content.push('\n');
 
     // Kernel log
     log_content.push_str("## DMESG\n");
@@ -178,7 +168,7 @@ pub fn system_debug() -> Result<()> {
     if let Ok(output) = run_command("dmesg", &[]) {
         log_content.push_str(&output);
     }
-    log_content.push_str("\n");
+    log_content.push('\n');
 
     // Plugin logs
     log_content.push_str("## Plugins\n");
@@ -195,7 +185,7 @@ pub fn system_debug() -> Result<()> {
             log_content.push_str(&content);
         }
     }
-    log_content.push_str("\n");
+    log_content.push('\n');
 
     // Network configuration
     log_content.push_str("## Network Configuration\n");
@@ -203,7 +193,7 @@ pub fn system_debug() -> Result<()> {
     if let Ok(output) = run_command("ifconfig", &["-a"]) {
         log_content.push_str(&output);
     }
-    log_content.push_str("\n");
+    log_content.push('\n');
 
     // UCI network
     log_content.push_str("## UCI Network\n");
@@ -211,7 +201,7 @@ pub fn system_debug() -> Result<()> {
     if let Ok(output) = run_command("uci", &["show", "network"]) {
         log_content.push_str(&output);
     }
-    log_content.push_str("\n");
+    log_content.push('\n');
 
     // Firewall
     log_content.push_str("## Firewall\n");
@@ -222,7 +212,7 @@ pub fn system_debug() -> Result<()> {
     if let Ok(output) = run_command("ip6tables", &["-L", "-v", "-n"]) {
         log_content.push_str(&output);
     }
-    log_content.push_str("\n");
+    log_content.push('\n');
 
     // Routing table
     log_content.push_str("## Routing Table\n");
@@ -233,7 +223,7 @@ pub fn system_debug() -> Result<()> {
     if let Ok(output) = run_command("ip", &["-6", "route"]) {
         log_content.push_str(&output);
     }
-    log_content.push_str("\n");
+    log_content.push('\n');
 
     // Write to file
     fs::write(log_file, log_content)?;

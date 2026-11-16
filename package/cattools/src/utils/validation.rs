@@ -13,7 +13,9 @@ pub fn validate_ip(ip: &str) -> Result<()> {
 
     for octet in &parts {
         if octet.is_empty() || octet.len() > 3 {
-            return Err(CatoolsError::ValidationError("Invalid IP octet".to_string()));
+            return Err(CatoolsError::ValidationError(
+                "Invalid IP octet".to_string(),
+            ));
         }
     }
 
@@ -52,7 +54,8 @@ pub fn validate_version(ver: &str) -> Result<()> {
     };
 
     let year_ok = year.len() == 2 && year.bytes().all(|c| c.is_ascii_digit());
-    let month_ok = !month.is_empty() && month.len() <= 2 && month.bytes().all(|c| c.is_ascii_digit());
+    let month_ok =
+        !month.is_empty() && month.len() <= 2 && month.bytes().all(|c| c.is_ascii_digit());
     let month_no_leading_zero = month.len() == 1 || !month.starts_with('0');
 
     if !(year_ok && month_ok && month_no_leading_zero) {
@@ -106,7 +109,7 @@ mod tests {
     #[test]
     fn test_validate_ip() {
         assert!(validate_ip("192.168.1.1").is_ok());
-        assert!(validate_ip("10.0.0.254").is_ok());
+        assert!(validate_ip("192.0.2.254").is_ok());
         assert!(validate_ip("256.1.1.1").is_err());
         assert!(validate_ip("192.168.1").is_err());
     }
