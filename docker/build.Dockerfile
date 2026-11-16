@@ -10,6 +10,7 @@ RUN apt-get update \
         build-essential bison flex file gawk gettext git libncurses-dev \
         libssl-dev libelf-dev python3 python3-setuptools rsync unzip wget \
         curl zstd xz-utils openssl ca-certificates which xsltproc qemu-utils \
+        qemu-system-x86 ovmf seabios \
     && rm -rf /var/lib/apt/lists/*
 
 ENV CARGO_HOME=/opt/cargo RUSTUP_HOME=/opt/rustup
