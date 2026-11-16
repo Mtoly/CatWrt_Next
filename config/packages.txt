@@ -1,5 +1,12 @@
-# CatWrt Next files and first-boot defaults.
+# CatWrt Next tools, files and first-boot defaults.
 catwrt-base
+cattools
+
+# Remove stock upgrade tools: they replace CatWrt Next with upstream firmware.
+-luci-app-attendedsysupgrade
+-luci-i18n-attendedsysupgrade-zh-cn
+-attendedsysupgrade-common
+-owut
 
 # Themes; argon is the default.
 luci-theme-argon

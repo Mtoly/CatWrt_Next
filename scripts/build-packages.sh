@@ -288,8 +288,10 @@ done
 # Export the whole indexed repository, so every index entry has an APK beside it.
 find "$out_dir" -maxdepth 1 -type f \( -name '*.apk' -o -name packages.adb \) -delete
 find "$package_dir" -maxdepth 1 -type f \( -name '*.apk' -o -name packages.adb \) -exec cp -t "$out_dir" -- {} +
+cp -- "$sdk/public-key.pem" "$out_dir/signing-public-key.pem"
+chmod 644 "$out_dir/signing-public-key.pem"
 printf '\n构建完成（软件包文件名包含版本）：\n'
-for artifact in "$out_dir"/*.apk "$out_dir/packages.adb"; do
+for artifact in "$out_dir"/*.apk "$out_dir/packages.adb" "$out_dir/signing-public-key.pem"; do
 	printf '  %s  %s 字节\n' "$(basename -- "$artifact")" "$(stat -c %s "$artifact")"
 done
 printf '签名公钥 SHA256：%s\n输出目录：%s\n' "$fingerprint" "${OUT_DIR:-out/packages}"

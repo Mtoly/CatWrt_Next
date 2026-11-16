@@ -9,7 +9,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential bison flex file gawk gettext git libncurses-dev \
         libssl-dev libelf-dev python3 python3-setuptools rsync unzip wget \
-        curl zstd xz-utils openssl ca-certificates which xsltproc \
+        curl zstd xz-utils openssl ca-certificates which xsltproc qemu-utils \
     && rm -rf /var/lib/apt/lists/*
 
 ENV CARGO_HOME=/opt/cargo RUSTUP_HOME=/opt/rustup
