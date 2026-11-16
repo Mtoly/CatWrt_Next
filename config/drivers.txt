@@ -1,0 +1,24 @@
+# verify in T03: virtio networking may be included in the target kernel.
+kmod-virtio-net
+# verify in T03
+kmod-e1000
+# verify in T03
+kmod-e1000e
+# verify in T03
+kmod-igb
+# verify in T03
+kmod-igc
+# verify in T03
+kmod-ixgbe
+# verify in T03
+kmod-i40e
+# verify in T03
+kmod-r8169
+# verify in T03
+kmod-r8125
+# verify in T03
+kmod-mlx4-core
+# verify in T03
+kmod-mlx5-core
+# verify in T03
+kmod-vmxnet3

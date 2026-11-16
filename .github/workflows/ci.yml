@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Select verification base
+        id: base
+        shell: bash
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+        run: |
+          base=${PR_BASE:-${PUSH_BASE:-}}
+          if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+            base=$(git hash-object -t tree /dev/null)
+          fi
+          printf 'sha=%s\n' "$base" >> "$GITHUB_OUTPUT"
+
+      - name: Build shared verification image
+        id: image
+        run: docker build -q -t catwrt-verify -f docker/verify.Dockerfile .
+
+      - name: Verify
+        env:
+          VERIFY_BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          docker run --rm -e CI=true -e VERIFY_BASE \
+            -v "$GITHUB_WORKSPACE:/src" \
+            -v catwrt-cargo-registry:/usr/local/cargo/registry \
+            -w /src catwrt-verify \
+            bash -c 'git config --global --add safe.directory /src && bash scripts/verify.sh'
+
+      - name: Scan diff for secrets
+        if: ${{ always() && steps.base.outcome == 'success' && steps.image.outcome == 'success' }}
+        env:
+          VERIFY_BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          docker run --rm -e VERIFY_BASE \
+            -v "$GITHUB_WORKSPACE:/src" -w /src catwrt-verify \
+            bash -euo pipefail -c '
+              git config --global --add safe.directory /src
+              if [[ $(git cat-file -t "$VERIFY_BASE") == tree ]]; then
+                gitleaks git --redact --log-opts=HEAD .
+              else
+                gitleaks git --redact --log-opts="$VERIFY_BASE..HEAD" .
+              fi
+            '

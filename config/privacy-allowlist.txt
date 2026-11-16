@@ -1,0 +1,2 @@
+# Format: <path-glob>:<regex>  # reason
+# Built-in address exceptions cover the documented default LAN address.
