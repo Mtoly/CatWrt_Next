@@ -4,7 +4,6 @@ PKG_NAME:=catwrt-base
 PKG_VERSION:=1
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-2.0-only
-PKGARCH:=all
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -18,6 +17,8 @@ define Package/catwrt-base
   CATEGORY:=Base system
   TITLE:=CatWrt Next files and first-boot defaults
   DEPENDS:=+default-settings-chn
+  # Must be set inside the package definition to take effect.
+  PKGARCH:=all
 endef
 
 define Package/catwrt-base/conffiles
