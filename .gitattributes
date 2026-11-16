@@ -1,7 +1,8 @@
 # Auto detect text files and perform LF normalization
-* text=auto
+* text=auto eol=lf
 
-# Files executed or parsed on Linux must keep LF endings.
+# Everything is LF in the working tree (Windows hosts use core.autocrlf=true);
+# the explicit rules below document files executed or parsed on Linux.
 *.sh text eol=lf
 Makefile text eol=lf
 *.mk text eol=lf
