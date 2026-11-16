@@ -337,11 +337,15 @@ for package in "${packages[@]}"; do
 done
 make "${make_args[@]}" defconfig
 grep -qx 'CONFIG_SIGNED_PACKAGES=y' .config || fail 'SDK defconfig disabled signed packages'
+# Drop earlier APKs (including the poweroff translation subpackage) so cached SDK runs
+# leave exactly one APK per exported name.
+if [[ -d $sdk/bin/packages ]]; then
+	for package in "${packages[@]}" luci-i18n-poweroff-zh-cn; do
+		find "$sdk/bin/packages" -type f -name "$package-*.apk" -delete
+	done
+fi
 for package in "${packages[@]}"; do
 	# Reinstall payloads and sign with the current key on cached SDK runs too.
-	if [[ -d $sdk/bin/packages ]]; then
-		find "$sdk/bin/packages" -type f -name "$package-*.apk" -delete
-	fi
 	make "${make_args[@]}" "package/$package/clean" V=s
 	make "${make_args[@]}" "package/$package/compile" V=s
 done

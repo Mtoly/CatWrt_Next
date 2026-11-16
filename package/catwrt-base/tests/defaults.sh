@@ -42,10 +42,9 @@ cat >"$TEST_ROOT/state" <<'EOF'
 system.@system[0].hostname=stock
 system.@system[0].timezone=CST-8
 system.@system[0].zonename=Asia/Shanghai
-network.lan.ipaddr=192.0.2.1
-network.lan.netmask=255.255.255.0
+network.lan.ipaddr=192.0.2.1/24
 luci.main.mediaurlbase=/luci-static/bootstrap
-luci.main.lang=zh_cn
+luci.main.lang=auto
 catwrt.repo=catwrt
 catwrt.repo.mirror=vsean
 catwrt.repo.custom=0
@@ -53,8 +52,8 @@ EOF
 : >"$TEST_ROOT/uci.log"
 sh "$TEST_ROOT/defaults"
 assert_line 'system.@system[0].hostname=CatWrt' "$TEST_ROOT/state"
-assert_line 'network.lan.ipaddr=192.168.1.4' "$TEST_ROOT/state"
-assert_line 'network.lan.netmask=255.255.255.0' "$TEST_ROOT/state"
+assert_line 'network.lan.ipaddr=192.168.1.4/24' "$TEST_ROOT/state"
+[ "$(grep -c '^network\.lan\.ipaddr=' "$TEST_ROOT/state")" -eq 1 ]
 assert_line 'system.@system[0].timezone=CST-8' "$TEST_ROOT/state"
 assert_line 'system.@system[0].zonename=Asia/Shanghai' "$TEST_ROOT/state"
 assert_line 'luci.main.lang=zh_cn' "$TEST_ROOT/state"
@@ -113,9 +112,10 @@ done
 printf 'PASS: optional service flags and init scripts\n'
 
 # A later run must preserve user changes and never repeat service actions.
-uci set 'network.lan.ipaddr=192.0.2.2'
+uci set 'network.lan.ipaddr=192.0.2.2/24'
 uci set 'system.@system[0].hostname=custom'
 uci set 'catwrt.repo.mirror=official'
+uci set 'luci.main.lang=en'
 cp "$TEST_ROOT/state" "$TEST_ROOT/expected.state"
 cp "$TEST_ROOT/services.log" "$TEST_ROOT/expected.services"
 : >"$TEST_ROOT/uci.log"
