@@ -1,0 +1,9 @@
+{
+  "luci-app-poweroff": {
+    "write": {
+      "file": {
+        "/sbin/poweroff": ["exec"]
+      }
+    }
+  }
+}

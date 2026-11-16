@@ -44,7 +44,7 @@ luci-i18n-vlmcsd-zh-cn
 # Built locally, including its Chinese translation.
 luci-app-poweroff
 # Chinese translation is included in the local build.
-# luci-i18n-poweroff-zh-cn
+luci-i18n-poweroff-zh-cn
 
 # Installed but disabled by default by catwrt-base.
 luci-app-openclash

@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-2.0-only
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Do you really want to power off the device?"
+msgstr ""
+
+msgid "Failed to power off the device: %s"
+msgstr ""
+
+msgid "No error output."
+msgstr ""
+
+msgid "Power Off"
+msgstr ""
+
+msgid "Power off failed (exit code %s): %s"
+msgstr ""
+
+msgid "Shutting down…"
+msgstr ""
+
+msgid "The device is shutting down."
+msgstr ""
+
+msgid "The device will power off. It will not start again until power is cycled or the power button is pressed."
+msgstr ""
