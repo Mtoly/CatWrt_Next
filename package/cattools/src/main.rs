@@ -14,7 +14,7 @@ use crate::cli::Cli;
 use crate::config::Config;
 use crate::error::{CatoolsError, Result};
 use crate::menu::{Menu, MenuOption, UtilitiesMenuOption};
-use crate::utils::system::{check_openwrt, check_root, patch_catwrt_release};
+use crate::utils::system::{check_openwrt, check_root};
 
 fn main() -> Result<()> {
     // Check root privileges
@@ -31,9 +31,6 @@ fn main() -> Result<()> {
     // Load configuration
     let config = Config::load()
         .map_err(|e| CatoolsError::ConfigError(format!("Failed to load configuration: {}", e)))?;
-
-    // Apply system patches
-    let _ = patch_catwrt_release();
 
     // Main loop
     loop {

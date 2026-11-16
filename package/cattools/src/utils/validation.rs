@@ -38,68 +38,53 @@ pub fn validate_ip(ip: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn validate_version(ver: &str) -> Result<()> {
-    let Some(rest) = ver.strip_prefix('v') else {
-        return Err(CatoolsError::ValidationError(format!(
-            "Invalid version format: {}",
-            ver
-        )));
-    };
-
-    let Some((year, month)) = rest.split_once('.') else {
-        return Err(CatoolsError::ValidationError(format!(
-            "Invalid version format: {}",
-            ver
-        )));
-    };
-
-    let year_ok = year.len() == 2 && year.bytes().all(|c| c.is_ascii_digit());
-    let month_ok =
-        !month.is_empty() && month.len() <= 2 && month.bytes().all(|c| c.is_ascii_digit());
-    let month_no_leading_zero = month.len() == 1 || !month.starts_with('0');
-
-    if !(year_ok && month_ok && month_no_leading_zero) {
-        return Err(CatoolsError::ValidationError(format!(
-            "Invalid version format: {}",
-            ver
-        )));
-    }
-
-    Ok(())
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+enum VersionStage {
+    Dev,
+    Rc(u32),
+    Release,
 }
 
-pub fn parse_version(ver: &str) -> Result<(u32, u32)> {
-    validate_version(ver)?;
-
-    let rest = ver
-        .strip_prefix('v')
-        .ok_or_else(|| CatoolsError::ValidationError("Cannot parse version".to_string()))?;
-
-    let (year_str, month_str) = rest
-        .split_once('.')
-        .ok_or_else(|| CatoolsError::ValidationError("Cannot parse version".to_string()))?;
-
-    let year: u32 = year_str
+fn parse_update_version(ver: &str) -> Result<(u32, u32, u32, VersionStage)> {
+    let invalid = || CatoolsError::ValidationError(format!("无效的版本号：{}", ver));
+    let rest = ver.strip_prefix('v').ok_or_else(invalid)?;
+    let (numbers, stage) = match rest.split_once('-') {
+        None => (rest, VersionStage::Release),
+        Some((numbers, "dev")) => (numbers, VersionStage::Dev),
+        Some((numbers, suffix)) => {
+            let rc = suffix.strip_prefix("rc").ok_or_else(invalid)?;
+            if rc.is_empty() || !rc.bytes().all(|c| c.is_ascii_digit()) {
+                return Err(invalid());
+            }
+            let rc = rc.parse().map_err(|_| invalid())?;
+            (numbers, VersionStage::Rc(rc))
+        }
+    };
+    let parts: Vec<&str> = numbers.split('.').collect();
+    if !(2..=3).contains(&parts.len())
+        || parts[0].len() != 2
+        || parts[1].len() > 2
+        || parts
+            .iter()
+            .any(|part| part.is_empty() || !part.bytes().all(|c| c.is_ascii_digit()))
+    {
+        return Err(invalid());
+    }
+    let year = parts[0].parse().map_err(|_| invalid())?;
+    let month = parts[1].parse().map_err(|_| invalid())?;
+    if !(1..=12).contains(&month) {
+        return Err(invalid());
+    }
+    let patch = parts
+        .get(2)
+        .unwrap_or(&"0")
         .parse()
-        .map_err(|_| CatoolsError::ValidationError("Cannot parse version".to_string()))?;
-    let month: u32 = month_str
-        .parse()
-        .map_err(|_| CatoolsError::ValidationError("Cannot parse version".to_string()))?;
-
-    Ok((year, month))
+        .map_err(|_| invalid())?;
+    Ok((year, month, patch, stage))
 }
 
-pub fn compare_version(v1: &str, v2: &str) -> Result<i8> {
-    let (y1, m1) = parse_version(v1)?;
-    let (y2, m2) = parse_version(v2)?;
-
-    if y1 > y2 || (y1 == y2 && m1 > m2) {
-        Ok(1)
-    } else if y1 < y2 || (y1 == y2 && m1 < m2) {
-        Ok(-1)
-    } else {
-        Ok(0)
-    }
+pub fn compare_versions(v1: &str, v2: &str) -> Result<std::cmp::Ordering> {
+    Ok(parse_update_version(v1)?.cmp(&parse_update_version(v2)?))
 }
 
 #[cfg(test)]
@@ -115,10 +100,59 @@ mod tests {
     }
 
     #[test]
-    fn test_version_compare() {
-        assert!(validate_version("v25.08").is_err());
-        assert_eq!(compare_version("v25.8", "v24.12").unwrap(), 1);
-        assert_eq!(compare_version("v24.12", "v25.8").unwrap(), -1);
-        assert_eq!(compare_version("v25.8", "v25.8").unwrap(), 0);
+    fn version_ordering() {
+        use std::cmp::Ordering::{Equal, Less};
+
+        for (left, right, expected) in [
+            ("v26.12", "v26.12.0", Equal),
+            ("v26.01", "v26.1", Equal),
+            ("v26.12-dev", "v26.12-rc1", Less),
+            ("v26.12-rc2", "v26.12-rc10", Less),
+            ("v26.12-rc10", "v26.12", Less),
+            ("v26.12", "v26.12.1-dev", Less),
+            ("v26.12.1-dev", "v26.12.1-rc1", Less),
+            ("v26.12.1-rc1", "v26.12.1", Less),
+            ("v26.12.1", "v26.12.2-dev", Less),
+            ("v26.12.9", "v26.12.10", Less),
+            ("v26.11.99", "v26.12-dev", Less),
+            ("v26.12", "v27.1-dev", Less),
+            ("v26.12.0-rc1", "v26.12-rc1", Equal),
+            ("v26.12-dev", "v26.12.0-dev", Equal),
+        ] {
+            assert_eq!(
+                compare_versions(left, right).unwrap(),
+                expected,
+                "{left} / {right}"
+            );
+            assert_eq!(compare_versions(right, left).unwrap(), expected.reverse());
+        }
+    }
+
+    #[test]
+    fn invalid_versions_are_rejected() {
+        for version in [
+            "",
+            "26.12",
+            "v2026.12",
+            "v26",
+            "v26.0",
+            "v26.13",
+            "v26.001",
+            "v26.12.",
+            "v26.12.1.2",
+            "v26.12-rc",
+            "v26.12-rcx",
+            "v26.12-beta1",
+            "v26.12-dev1",
+            "v26.12-rc1-dev",
+            "v26.12.+1",
+            "v26.12-rc+1",
+            "v26.12.999999999999999999999",
+            " v26.12",
+            "v26.12\n",
+        ] {
+            assert!(compare_versions(version, "v26.12").is_err(), "{version}");
+            assert!(compare_versions("v26.12", version).is_err(), "{version}");
+        }
     }
 }

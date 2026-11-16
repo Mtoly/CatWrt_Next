@@ -30,16 +30,19 @@ pub fn check_openwrt() -> Result<()> {
 }
 
 pub fn run_command(cmd: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new(cmd)
-        .args(args)
-        .output()
-        .map_err(|e| CatoolsError::CommandError(format!("Failed to execute {}: {}", cmd, e)))?;
+    let command = format!("{} {}", cmd, args.join(" "));
+    let output = Command::new(cmd).args(args).output().map_err(|e| {
+        CatoolsError::CommandError(format!(
+            "无法执行命令 {}：{}；stderr：无（未启动）",
+            command, e
+        ))
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(CatoolsError::CommandError(format!(
-            "命令 {} 退出状态 {}: {}",
-            cmd, output.status, stderr
+            "命令 {} 退出状态 {}；stderr：{}",
+            command, output.status, stderr
         )));
     }
 
@@ -80,15 +83,5 @@ pub fn url_exists(url: &str) -> bool {
 
 pub fn restart_service(service: &str) -> Result<()> {
     run_command("/etc/init.d", &[service, "restart"])?;
-    Ok(())
-}
-
-pub fn patch_catwrt_release() -> Result<()> {
-    let release_path = "/etc/catwrt_release";
-    if !std::path::Path::new(release_path).exists() {
-        // Generate default release file
-        let content = "CATWRT_RELEASE=\"v25.8\"\nCATWRT_ARCH=\"unknown\"\n";
-        std::fs::write(release_path, content)?;
-    }
     Ok(())
 }
