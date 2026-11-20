@@ -10,6 +10,7 @@ use dialoguer::Confirm;
 use std::cmp::Ordering;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 const IMAGE_FILE: &str = "/tmp/catwrt-upgrade.img.gz";
 const SYSUPGRADE_CONF: &str = "/etc/sysupgrade.conf";
@@ -243,6 +244,10 @@ fn preserve_package_backup() -> Result<()> {
     Ok(())
 }
 
+fn sysupgrade_started(success: bool, stderr: &str) -> bool {
+    success || stderr.contains("Commencing upgrade")
+}
+
 fn upgrade(release: &Release, meta: &UpdateMeta) -> Result<()> {
     let mounts = fs::read_to_string("/proc/mounts")?;
     let variant = variant(Path::new("/sys/firmware/efi"), &mounts);
@@ -294,14 +299,51 @@ fn upgrade(release: &Release, meta: &UpdateMeta) -> Result<()> {
     } else {
         vec!["-n", "-v", IMAGE_FILE]
     };
-    run_command("sysupgrade", &args)?;
-    println!("升级命令已完成，设备即将重启。");
+    let command = format!("sysupgrade {}", args.join(" "));
+    let output = Command::new("sysupgrade")
+        .args(&args)
+        .output()
+        .map_err(|error| {
+            CatoolsError::CommandError(format!(
+                "无法执行命令 {}：{}；stderr：无（未启动）",
+                command, error
+            ))
+        })?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !sysupgrade_started(output.status.success(), &stderr) {
+        return Err(CatoolsError::CommandError(format!(
+            "命令 {} 退出状态 {}；stderr：{}",
+            command, output.status, stderr
+        )));
+    }
+    println!("升级已开始，设备即将重启，当前连接会断开。");
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sysupgrade_success_starts_upgrade_without_stderr() {
+        assert!(sysupgrade_started(true, ""));
+    }
+
+    #[test]
+    fn sysupgrade_handover_starts_upgrade_despite_failure_status() {
+        let stderr = concat!(
+            "… upgrade: Saving config files...\n",
+            "… upgrade: Commencing upgrade. Closing all shell sessions.\n",
+            "Command failed: ubus call system sysupgrade { … } (Connection failed)\n"
+        );
+        assert!(sysupgrade_started(false, stderr));
+    }
+
+    #[test]
+    fn sysupgrade_image_check_failure_does_not_start_upgrade() {
+        let stderr = "Image check failed.\n";
+        assert!(!sysupgrade_started(false, stderr));
+    }
 
     #[test]
     fn release_requires_real_version_and_arch() {
