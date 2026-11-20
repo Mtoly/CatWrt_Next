@@ -1,0 +1,99 @@
+# Trigger manually: Actions → Upstream watch → Run workflow,
+# or run: gh workflow run upstream-watch.yml
+name: Upstream watch
+
+on:
+  schedule:
+    - cron: "17 1 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Read current version
+        id: current
+        shell: bash
+        run: |
+          current=$(sed -n 's/^IMMORTALWRT_VERSION=//p' config/release.env)
+          if [[ ! $current =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf 'Invalid IMMORTALWRT_VERSION in config/release.env; expected x.y.z\n' >&2
+            exit 1
+          fi
+          printf 'version=%s\n' "$current" >> "$GITHUB_OUTPUT"
+
+      - name: Download release index
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 --silent --show-error \
+            --write-out 'HTTP status: %{http_code}\nContent type: %{content_type}\nFinal URL: %{url_effective}\n' \
+            --output "$RUNNER_TEMP/immortalwrt-releases.html" \
+            https://downloads.immortalwrt.org/releases/
+
+      - name: Check for a newer patch release
+        id: check
+        shell: bash
+        env:
+          CURRENT: ${{ steps.current.outputs.version }}
+        run: |
+          newest=$(bash scripts/upstream-check.sh --current "$CURRENT" \
+            --index "$RUNNER_TEMP/immortalwrt-releases.html")
+          if [[ -z $newest ]]; then
+            printf 'up to date\n'
+            exit 0
+          fi
+          printf 'new=%s\n' "$newest" >> "$GITHUB_OUTPUT"
+
+      - name: Open an upgrade reminder
+        if: ${{ steps.check.outputs.new != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CURRENT: ${{ steps.current.outputs.version }}
+          NEW: ${{ steps.check.outputs.new }}
+        run: |
+          title="ImmortalWrt $NEW 已发布"
+          titles=$(gh issue list --state open --search "$title in:title" \
+            --limit 100 --json title --jq '.[].title')
+          if grep -Fxq -- "$title" <<< "$titles"; then
+            printf '提醒 issue 已存在：%s\n' "$title"
+            exit 0
+          fi
+          body="$RUNNER_TEMP/upstream-reminder.md"
+          upstream_repo=https://github.com/immortalwrt/immortalwrt
+          cat > "$body" <<EOF
+          ImmortalWrt 已发布同系列的新补丁版本，请安排升级验证。
+
+          - 当前版本：$CURRENT
+          - 新版本：$NEW
+          - [新版下载目录](https://downloads.immortalwrt.org/releases/$NEW/)
+          - [ImmortalWrt GitHub Releases]($upstream_repo/releases)
+
+          升级检查清单（按顺序执行）：
+
+          - [ ] 修改 \`config/release.env\` 中的 \`IMMORTALWRT_VERSION\`。
+          - [ ] 重新构建固件。
+          - [ ] 运行本地冒烟测试。
+          - [ ] 打 \`-rc1\` 测试标签。
+          - [ ] 完成 PVE 测试，通过后再打正式版标签。
+
+          此 issue 由工作流自动创建，未修改任何代码或配置，也未触发发布。
+          EOF
+          gh issue create --title "$title" --body-file "$body"
