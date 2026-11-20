@@ -443,7 +443,7 @@ def run_variant(run, images, version, log_dir, boot_timeout, expected_ip, http_t
                 guest_check(f'未安装 {package}', f'apk info -e {package}; smoke_status=$?; '
                             'printf "apk_exit=%s\\n" "$smoke_status"; '
                             'test "$smoke_status" -eq 1', '未安装（apk 退出码 1）', lambda output: True)
-            for service in ('openclash', 'tailscale', 'zerotier', 'frpc', 'ddns', 'ddns-go'):
+            for service in ('openclash', 'tailscale', 'zerotier', 'appfilter', 'mosdns'):
                 command = (f'if test ! -e /etc/init.d/{service}; then echo SKIP; '
                            f'elif /etc/init.d/{service} enabled; then echo ENABLED; '
                            'else echo DISABLED; fi')

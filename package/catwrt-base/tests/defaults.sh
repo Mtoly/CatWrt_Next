@@ -72,22 +72,12 @@ openclash.config=openclash
 openclash.config.enable=1
 zerotier.@zerotier[0]=zerotier
 zerotier.@zerotier[0].enabled=1
-ddns.global=ddns
-ddns.global.enabled=1
-ddns.example=service
-ddns.example.enabled=1
-ddns.@service[0]=service
-ddns.@service[0].enabled=1
-ddns-go.config=ddns-go
-ddns-go.config.enabled=1
-frpc.common=frpc
-frpc.common.server_port=7000
 EOF
 # Remove the previous done flag before applying the second fixture.
 sed '/^system\.@imm_init\[0\]\.catwrt_init=1$/d' "$TEST_ROOT/state" >"$TEST_ROOT/state.next"
 mv "$TEST_ROOT/state.next" "$TEST_ROOT/state"
 mkdir "$TEST_ROOT/argon"
-for service in openclash tailscale zerotier frpc ddns ddns-go; do
+for service in openclash tailscale zerotier appfilter mosdns; do
 	cat >"$TEST_ROOT/init.d/$service" <<'EOF'
 #!/bin/sh
 printf '%s %s\n' "${0##*/}" "$*" >>"$TEST_ROOT/services.log"
@@ -98,17 +88,12 @@ sh "$TEST_ROOT/defaults"
 assert_line 'luci.main.mediaurlbase=/luci-static/argon' "$TEST_ROOT/state"
 assert_line 'openclash.config.enable=0' "$TEST_ROOT/state"
 assert_line 'zerotier.@zerotier[0].enabled=0' "$TEST_ROOT/state"
-assert_line 'ddns.example.enabled=0' "$TEST_ROOT/state"
-assert_line 'ddns.@service[0].enabled=0' "$TEST_ROOT/state"
-assert_line 'ddns.global.enabled=1' "$TEST_ROOT/state"
-assert_line 'ddns-go.config.enabled=0' "$TEST_ROOT/state"
-assert_line 'frpc.common.server_port=7000' "$TEST_ROOT/state"
 assert_line 'catwrt.repo.mirror=vsean' "$TEST_ROOT/state"
 assert_line 'catwrt.repo.custom=0' "$TEST_ROOT/state"
-for service in openclash tailscale zerotier frpc ddns ddns-go; do
+for service in openclash tailscale zerotier appfilter mosdns; do
 	assert_line "$service disable" "$TEST_ROOT/services.log"
 done
-[ "$(wc -l <"$TEST_ROOT/services.log")" -eq 6 ]
+[ "$(wc -l <"$TEST_ROOT/services.log")" -eq 5 ]
 printf 'PASS: optional service flags and init scripts\n'
 
 # A later run must preserve user changes and never repeat service actions.

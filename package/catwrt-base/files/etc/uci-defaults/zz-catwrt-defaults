@@ -20,7 +20,7 @@ if [ -d /www/luci-static/argon ]; then
 	uci set 'luci.main.mediaurlbase=/luci-static/argon'
 fi
 
-for service in openclash tailscale zerotier frpc ddns ddns-go; do
+for service in openclash tailscale zerotier appfilter mosdns; do
 	if [ -f "/etc/init.d/$service" ]; then
 		"/etc/init.d/$service" disable
 	fi
@@ -32,14 +32,6 @@ fi
 
 if uci -q get 'zerotier.@zerotier[0]' >/dev/null; then
 	uci set 'zerotier.@zerotier[0].enabled=0'
-fi
-
-uci -q show ddns | sed -n 's/^\(ddns\.[^.]*\)=service$/\1/p' | while IFS= read -r section; do
-	uci set "$section.enabled=0"
-done
-
-if uci -q get ddns-go.config >/dev/null; then
-	uci set 'ddns-go.config.enabled=0'
 fi
 
 # default-settings-chn selects vsean; leave distfeeds.list unchanged.
