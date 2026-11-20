@@ -77,6 +77,9 @@ if ((${#workflows[@]})); then
 else
 	skip_step actionlint 'no workflows'
 fi
+if [[ -f scripts/gen-meta.sh ]]; then
+	run_step 'gen-meta self-test' bash scripts/gen-meta.sh --self-test
+fi
 if [[ -f package/cattools/Cargo.toml ]]; then
 	run_step 'cargo fmt' rust_step fmt --all -- --check
 	run_step 'cargo clippy' rust_step clippy --all-targets -- -D warnings
