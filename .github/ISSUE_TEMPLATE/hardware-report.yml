@@ -4,7 +4,6 @@ title: "[硬件] "
 labels: ["hardware"]
 body:
   - type: markdown
-    id: privacy
     attributes:
       value: |
         发布前请删除公网 IP、MAC 地址、PPPoE 账号等个人信息。
