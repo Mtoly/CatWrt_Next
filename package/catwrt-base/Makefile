@@ -40,6 +40,7 @@ define Package/catwrt-base/install
 	$(INSTALL_DATA) ./files/etc/config/catwrt $(1)/etc/config/catwrt
 	$(INSTALL_DATA) ./files/etc/apk/keys/catwrt-next.pem $(1)/etc/apk/keys/catwrt-next.pem
 	$(INSTALL_DATA) ./files/etc/apk/repositories.d/catwrt.list $(1)/etc/apk/repositories.d/catwrt.list
+	$(SED) 's|@CATWRT_VERSION@|$(CATWRT_VERSION)|g; s|@ARCH@|$(CATWRT_ARCH)|g' $(1)/etc/apk/repositories.d/catwrt.list
 	$(INSTALL_BIN) ./files/etc/uci-defaults/zz-catwrt-defaults $(1)/etc/uci-defaults/zz-catwrt-defaults
 endef
 

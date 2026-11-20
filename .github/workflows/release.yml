@@ -1,5 +1,6 @@
 # The APK_SIGN_KEY secret is required. Configure Pages to deploy from gh-pages.
 # rc tags publish a pre-release only and never update gh-pages.
+# Repository publishing runs only when the repository variable CATWRT_REPO_ENABLED is true.
 name: Release
 
 on:
@@ -19,6 +20,7 @@ jobs:
     timeout-minutes: 180
     permissions:
       contents: write
+      actions: write
     defaults:
       run:
         shell: bash
@@ -189,7 +191,7 @@ jobs:
             printf 'Cannot query gh-pages; git ls-remote exited with status %s.\n' "$result" >&2
             exit "$result"
           fi
-          find "$site_dir" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
+          find "$site_dir" -mindepth 1 -maxdepth 1 ! -name .git ! -name repo -exec rm -rf -- {} +
           cp -a pages/. "$site_dir/"
           cp meta.json "$site_dir/meta.json"
           git -C "$site_dir" add --all
@@ -203,3 +205,10 @@ jobs:
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
           git -C "$site_dir" -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
             push "$remote" gh-pages
+
+      - name: Start repository publishing
+        if: steps.validate.outputs.prerelease == 'false' && vars.CATWRT_REPO_ENABLED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh workflow run repo-publish.yml -f tag="$TAG"

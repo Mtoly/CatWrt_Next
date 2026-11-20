@@ -1,0 +1,124 @@
+# Publish signed APKs to gh-pages; off unless CATWRT_REPO_ENABLED=true.
+# Requires the APK_SIGN_KEY secret and an existing stable release site.
+# Run manually: gh workflow run repo-publish.yml -f tag=v26.12
+# Published URL: https://mtoly.github.io/CatWrt_Next/repo/<version>/x86_64/packages.adb
+name: Publish package repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Stable release tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: vars.CATWRT_REPO_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4.2.2
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate repository release
+        env:
+          TAG: ${{ inputs.tag }}
+          APK_SIGN_KEY: ${{ secrets.APK_SIGN_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ ! $TAG =~ ^v[0-9]{2}\.(0?[1-9]|1[0-2])(\.[1-9][0-9]*)?$ ]]; then
+            printf 'Invalid stable release tag: %s\n' "$TAG" >&2
+            exit 1
+          fi
+          tag_commit=$(git rev-parse --verify "refs/tags/${TAG}^{commit}")
+          if [[ $(git rev-parse HEAD) != "$tag_commit" ]]; then
+            printf 'Checkout does not match the requested tag.\n' >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$tag_commit" origin/main; then
+            printf 'The tagged commit must be an ancestor of origin/main.\n' >&2
+            exit 1
+          fi
+          if [[ -z $APK_SIGN_KEY ]]; then
+            printf 'The APK_SIGN_KEY secret is required for repository signing.\n' >&2
+            exit 1
+          fi
+
+      - name: Set firmware version
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ $(grep -c '^CATWRT_VERSION=' config/release.env) == 1 ]]
+          sed -i "s/^CATWRT_VERSION=.*/CATWRT_VERSION=$TAG/" config/release.env
+
+      # Only the Docker path has been tested; CI=true would bypass that path.
+      - name: Build packages
+        env:
+          CI: "false"
+          APK_SIGN_KEY: ${{ secrets.APK_SIGN_KEY }}
+        run: bash scripts/build-packages.sh
+
+      - name: Verify repository assets
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(out/packages/*.apk)
+          [[ ${#packages[@]} == 4 ]] || { printf 'Expected exactly four APK packages.\n' >&2; exit 1; }
+          [[ -s out/packages/packages.adb ]] || { printf 'Missing or empty package index.\n' >&2; exit 1; }
+          if ! cmp out/packages/signing-public-key.pem package/catwrt-base/files/etc/apk/keys/catwrt-next.pem; then
+            printf 'Exported signing public key does not match the firmware public key.\n' >&2
+            exit 1
+          fi
+
+      - name: Publish repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          site_dir=$(mktemp -d "$RUNNER_TEMP/catwrt-repo.XXXXXX")
+          remote="https://github.com/${GITHUB_REPOSITORY}.git"
+          result=0
+          git ls-remote --exit-code --heads "$remote" gh-pages > /dev/null || result=$?
+          if [[ $result == 0 ]]; then
+            git clone --quiet --single-branch --branch gh-pages "$remote" "$site_dir"
+          elif [[ $result == 2 ]]; then
+            printf 'publish a stable release first\n' >&2
+            exit 1
+          else
+            printf 'Cannot query gh-pages; git ls-remote exited with status %s.\n' "$result" >&2
+            exit "$result"
+          fi
+          repo_dir="$site_dir/repo/$TAG/x86_64"
+          rm -rf -- "$repo_dir"
+          mkdir -p "$repo_dir"
+          cp out/packages/*.apk out/packages/packages.adb "$repo_dir/"
+          git -C "$site_dir" add -- "repo/$TAG/x86_64"
+          if git -C "$site_dir" diff --cached --quiet; then
+            printf 'Package repository is unchanged.\n'
+            exit 0
+          fi
+          git -C "$site_dir" -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit --quiet -m "Publish package repository for $TAG"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -C "$site_dir" -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push "$remote" gh-pages
