@@ -84,13 +84,15 @@ check_manifest() {
 	awk '
 		{ installed[$1] = 1 }
 		END {
-			split("catwrt-base cattools luci-theme-argon luci-app-openclash tailscale", required, " ")
+			split("catwrt-base cattools luci-theme-argon luci-app-openclash tailscale luci-app-appfilter luci-app-mosdns", required, " ")
 			split("luci-app-attendedsysupgrade luci-i18n-attendedsysupgrade-zh-cn attendedsysupgrade-common owut luci-app-passwall", forbidden, " ")
-			for (i = 1; i <= 5; i++) {
+			for (i in required) {
 				if (!(required[i] in installed)) {
 					printf "build-image: Manifest missing required package: %s\n", required[i] > "/dev/stderr"
 					failed = 1
 				}
+			}
+			for (i in forbidden) {
 				if (forbidden[i] in installed) {
 					printf "build-image: Manifest contains forbidden package: %s\n", forbidden[i] > "/dev/stderr"
 					failed = 1
@@ -223,10 +225,10 @@ self_test() {
 	fi
 	[[ $output == *'ext4/efi/img.gz'* && $output == *'ImageBuilder produced'* ]]
 	checks=$((checks + 1))
-	printf '%s - 1.0-r1\n' catwrt-base cattools luci-theme-argon luci-app-openclash tailscale >"$fixture/valid.manifest"
+	printf '%s - 1.0-r1\n' catwrt-base cattools luci-theme-argon luci-app-openclash tailscale luci-app-appfilter luci-app-mosdns >"$fixture/valid.manifest"
 	check_manifest "$fixture/valid.manifest"
 	checks=$((checks + 1))
-	for package in catwrt-base cattools luci-theme-argon luci-app-openclash tailscale; do
+	for package in catwrt-base cattools luci-theme-argon luci-app-openclash tailscale luci-app-appfilter luci-app-mosdns; do
 		awk -v name="$package" '$1 != name' "$fixture/valid.manifest" >"$fixture/invalid.manifest"
 		if output=$(check_manifest "$fixture/invalid.manifest" 2>&1); then
 			fail "self-test: missing required package accepted: $package"
@@ -379,6 +381,25 @@ mkdir -p -- "$ib/packages" "$ib/keys"
 find "$ib/packages" -maxdepth 1 -type f \( -name '*.apk' -o -name packages.adb \) -delete
 cp -- "$packages_dir/"*.apk "$ib/packages/"
 cp -- "$packages_dir/signing-public-key.pem" "$ib/keys/catwrt-next.pem"
+# Vendored MosDNS: fetch the pinned sbwml release, verify it, and add its APKs to
+# the ImageBuilder's local feed so luci-app-mosdns and its runtime install from
+# there. The cache file name carries the checksum so a version bump never reuses a
+# stale tarball.
+# shellcheck disable=SC1091
+source "$repo/config/mosdns.env"
+mosdns_tarball="$dl/mosdns-$MOSDNS_TARBALL_SHA256.tar.gz"
+if [[ ! -f $mosdns_tarball ]]; then
+	download "$MOSDNS_TARBALL_URL" "$mosdns_tarball"
+fi
+verify_sha256 "$mosdns_tarball" "$MOSDNS_TARBALL_SHA256"
+mosdns_extract=$(mktemp -d "$work/.mosdns.XXXXXX")
+tar -xzf "$mosdns_tarball" -C "$mosdns_extract"
+shopt -s nullglob
+mosdns_apks=("$mosdns_extract"/packages_ci/*.apk)
+shopt -u nullglob
+[[ ${#mosdns_apks[@]} -gt 0 ]] || fail "No MosDNS APKs in $mosdns_tarball"
+cp -- "${mosdns_apks[@]}" "$ib/packages/"
+rm -rf -- "$mosdns_extract"
 produced="$ib/bin/targets/$TARGET/$SUBTARGET"
 # A cached build must not satisfy collection with images from an earlier run.
 if [[ -d $produced ]]; then

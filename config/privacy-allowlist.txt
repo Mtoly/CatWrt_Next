@@ -1,3 +1,4 @@
 # Format: <path-glob>:<regex>  # reason
 # Built-in address exceptions cover the documented default LAN address.
 package/catwrt-base/files/etc/apk/keys/*.pem:^[A-Za-z0-9+/=]+$  # apk signing public key, public by design
+config/mosdns.env:^MOSDNS_TARBALL_SHA256="[0-9a-f]*"$  # pinned sbwml MosDNS tarball checksum (public, not a secret)
