@@ -145,6 +145,7 @@ jobs:
             printf -- '- EFI：UEFI 启动；BIOS：传统 BIOS 启动。\n'
             printf -- '- img.gz：解压后用于刷写；qcow2：用于虚拟机。\n\n'
             printf '默认管理地址：192.168.1.4。\n\n'
+            printf '实体机未经作者测试，欢迎通过「硬件测试反馈」Issue 报告结果：https://github.com/%s/issues/new?template=hardware-report.yml\n\n' "$GITHUB_REPOSITORY"
             printf '刷写前请核对 SHA256 校验和：\n\n```text\n'
             cat out/images/sha256sums
             printf '```\n'
