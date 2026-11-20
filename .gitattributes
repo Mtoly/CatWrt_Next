@@ -1,2 +1,20 @@
 # Auto detect text files and perform LF normalization
-* text=auto
+* text=auto eol=lf
+
+# Everything is LF in the working tree (Windows hosts use core.autocrlf=true);
+# the explicit rules below document files executed or parsed on Linux.
+*.sh text eol=lf
+Makefile text eol=lf
+*.mk text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.js text eol=lf
+*.po text eol=lf
+*.pem text eol=lf
+*.env text eol=lf
+*.txt text eol=lf
+package/**/files/** text eol=lf
+package/**/root/** text eol=lf

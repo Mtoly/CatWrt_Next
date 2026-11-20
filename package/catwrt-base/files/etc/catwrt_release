@@ -1,0 +1,5 @@
+version=@CATWRT_VERSION@
+base=immortalwrt-@IMMORTALWRT_VERSION@
+arch=@ARCH@
+build_date=@BUILD_DATE@
+source=https://github.com/Mtoly/CatWrt_Next

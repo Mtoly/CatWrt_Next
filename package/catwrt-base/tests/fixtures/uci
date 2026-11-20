@@ -1,0 +1,52 @@
+#!/bin/sh
+
+printf '%s\n' "$*" >>"$TEST_ROOT/uci.log"
+quiet=0
+if [ "$1" = '-q' ]; then
+	quiet=1
+	shift
+fi
+command=$1
+shift
+
+case "$command" in
+get)
+	awk -v key="$1" '
+		index($0, key "=") == 1 {
+			print substr($0, length(key) + 2)
+			found = 1
+			exit
+		}
+		END { if (!found) exit 1 }
+	' "$TEST_ROOT/state"
+	;;
+set)
+	key=${1%%=*}
+	awk -v key="$key" 'index($0, key "=") != 1' "$TEST_ROOT/state" >"$TEST_ROOT/state.next"
+	printf '%s\n' "$1" >>"$TEST_ROOT/state.next"
+	mv "$TEST_ROOT/state.next" "$TEST_ROOT/state"
+	;;
+delete)
+	awk -v key="$1" '
+		index($0, key "=") == 1 { found = 1; next }
+		{ print }
+		END { if (!found) exit 1 }
+	' "$TEST_ROOT/state" >"$TEST_ROOT/state.next"
+	delete_status=$?
+	mv "$TEST_ROOT/state.next" "$TEST_ROOT/state"
+	[ "$delete_status" -eq 0 ] || [ "$quiet" -eq 1 ]
+	;;
+add_list)
+	printf '%s\n' "$1" >>"$TEST_ROOT/state"
+	;;
+show)
+	awk -v prefix="$1." 'index($0, prefix) == 1' "$TEST_ROOT/state"
+	;;
+add)
+	[ "$*" = 'system imm_init' ] || exit 1
+	printf '%s\n' 'system.@imm_init[0]=imm_init' >>"$TEST_ROOT/state"
+	printf '%s\n' 'cfg000001'
+	;;
+commit) ;;
+*) exit 1 ;;
+esac

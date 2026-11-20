@@ -1,0 +1,25 @@
+
+     _____     _             _
+    |     |___| |_ _ _ _ ___| |_
+    |   --| .'|  _| | | |  _|  _|
+    |_____|__,|_| |_____|_| |_|
+   W I R E L E S S   F R E E D O M
+
+======================================
+             CatWrt Next
+       ImmortalWrt 25.12 based
+
+============== 故障恢复模式（FAILSAFE MODE） ==============
+专用命令：
+* firstboot         恢复出厂设置
+* mount_root        挂载包含配置文件的根分区
+
+执行 mount_root 后：
+* passwd            修改 root 密码
+* /etc/config       配置文件目录
+
+更多帮助：
+https://openwrt.org/docs/guide-user/troubleshooting/
+- failsafe_and_factory_reset
+- root_password_reset
+=======================================================

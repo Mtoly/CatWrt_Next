@@ -1,0 +1,214 @@
+# The APK_SIGN_KEY secret is required. Configure Pages to deploy from gh-pages.
+# rc tags publish a pre-release only and never update gh-pages.
+# Repository publishing runs only when the repository variable CATWRT_REPO_ENABLED is true.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: write
+      actions: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release
+        id: validate
+        env:
+          TAG: ${{ github.ref_name }}
+          APK_SIGN_KEY: ${{ secrets.APK_SIGN_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ ! $TAG =~ ^v[0-9]{2}\.(0?[1-9]|1[0-2])(\.[1-9][0-9]*)?(-rc[1-9][0-9]*)?$ ]]; then
+            printf 'Invalid release tag: %s\n' "$TAG" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}^{commit}" origin/main; then
+            printf 'The tagged commit must be an ancestor of origin/main.\n' >&2
+            exit 1
+          fi
+          if [[ -z $APK_SIGN_KEY ]]; then
+            printf 'The APK_SIGN_KEY secret is required for release signing.\n' >&2
+            exit 1
+          fi
+          prerelease=false
+          [[ $TAG != *-rc* ]] || prerelease=true
+          printf 'prerelease=%s\n' "$prerelease" >> "$GITHUB_OUTPUT"
+
+      - name: Set firmware version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ $(grep -c '^CATWRT_VERSION=' config/release.env) == 1 ]]
+          sed -i "s/^CATWRT_VERSION=.*/CATWRT_VERSION=$TAG/" config/release.env
+          grep '^CATWRT_VERSION=' config/release.env
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h
+
+      - name: Enable KVM when available
+        run: |
+          printf '%s\n' 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          if [[ ! -r /dev/kvm || ! -w /dev/kvm ]]; then
+            printf 'KVM is unavailable; smoke tests will use TCG.\n'
+          fi
+
+      # Only the Docker path has been tested; CI=true would bypass that path.
+      - name: Build packages
+        env:
+          CI: "false"
+          APK_SIGN_KEY: ${{ secrets.APK_SIGN_KEY }}
+        run: bash scripts/build-packages.sh
+
+      - name: Build firmware images
+        env:
+          CI: "false"
+        run: bash scripts/build-image.sh
+
+      - name: Smoke test firmware
+        env:
+          CI: "false"
+        run: bash scripts/smoke-test.sh
+
+      - name: Upload smoke logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: release-smoke-logs
+          path: out/smoke
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: Verify release assets
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          images=(out/images/*.img.gz out/images/*.qcow2)
+          [[ ${#images[@]} == 8 ]] || { printf 'Expected exactly eight firmware images.\n' >&2; exit 1; }
+          expected=()
+          for fs in squashfs ext4; do
+            for boot in bios efi; do
+              for format in img.gz qcow2; do
+                name="catwrt-next-${TAG}-x86-64-${fs}-${boot}.${format}"
+                [[ -s out/images/$name ]] || { printf 'Missing or empty image: %s\n' "$name" >&2; exit 1; }
+                expected+=("$name")
+              done
+            done
+          done
+          [[ -s out/images/catwrt-next-${TAG}-x86-64.manifest ]]
+          diff -u <(printf '%s\n' "${expected[@]}" | sort) <(awk '{ name=$2; sub(/^\*/, "", name); print name }' out/images/sha256sums | sort)
+          (cd out/images && sha256sum --check --strict sha256sums)
+
+      - name: Write release notes
+        env:
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ steps.validate.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          # release.env is trusted repository configuration.
+          # shellcheck disable=SC1091
+          source config/release.env
+          {
+            printf '# CatWrt Next %s\n\n' "$TAG"
+            printf '底座：immortalwrt-%s。\n\n' "$IMMORTALWRT_VERSION"
+            if [[ $PRERELEASE == true ]]; then
+              printf '**预发布版本，仅供测试。**\n\n'
+            fi
+            printf '镜像选择：\n\n'
+            printf -- '- squashfs：只读基础系统与可写配置层；ext4：可写根文件系统。\n'
+            printf -- '- EFI：UEFI 启动；BIOS：传统 BIOS 启动。\n'
+            printf -- '- img.gz：解压后用于刷写；qcow2：用于虚拟机。\n\n'
+            printf '默认管理地址：192.168.1.4。\n\n'
+            printf '刷写前请核对 SHA256 校验和：\n\n```text\n'
+            cat out/images/sha256sums
+            printf '```\n'
+          } > release-notes.md
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ steps.validate.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          tag=$TAG
+          args=()
+          [[ $PRERELEASE != true ]] || args+=(--prerelease)
+          gh release create "$tag" --verify-tag --title "CatWrt Next $tag" \
+            --notes-file release-notes.md "${args[@]}" \
+            out/images/*.img.gz out/images/*.qcow2 out/images/sha256sums \
+            "out/images/catwrt-next-${tag}-x86-64.manifest"
+
+      - name: Publish stable update metadata
+        if: steps.validate.outputs.prerelease == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # release.env is trusted repository configuration.
+          # shellcheck disable=SC1091
+          source config/release.env
+          bash scripts/gen-meta.sh --version "$TAG" --base "immortalwrt-$IMMORTALWRT_VERSION" \
+            --released "$(date -u +%F)" --repo "$GITHUB_REPOSITORY" \
+            --images out/images --output meta.json
+          site_dir=$(mktemp -d "$RUNNER_TEMP/catwrt-pages.XXXXXX")
+          remote="https://github.com/${GITHUB_REPOSITORY}.git"
+          result=0
+          git ls-remote --exit-code --heads "$remote" gh-pages > /dev/null || result=$?
+          if [[ $result == 0 ]]; then
+            git clone --quiet --single-branch --branch gh-pages "$remote" "$site_dir"
+          elif [[ $result == 2 ]]; then
+            git init --quiet "$site_dir"
+            git -C "$site_dir" checkout --quiet --orphan gh-pages
+          else
+            printf 'Cannot query gh-pages; git ls-remote exited with status %s.\n' "$result" >&2
+            exit "$result"
+          fi
+          find "$site_dir" -mindepth 1 -maxdepth 1 ! -name .git ! -name repo -exec rm -rf -- {} +
+          cp -a pages/. "$site_dir/"
+          cp meta.json "$site_dir/meta.json"
+          git -C "$site_dir" add --all
+          if git -C "$site_dir" diff --cached --quiet; then
+            printf 'Update metadata is unchanged.\n'
+            exit 0
+          fi
+          git -C "$site_dir" -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit --quiet -m "Publish meta.json for $TAG"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -C "$site_dir" -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push "$remote" gh-pages
+
+      - name: Start repository publishing
+        if: steps.validate.outputs.prerelease == 'false' && vars.CATWRT_REPO_ENABLED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh workflow run repo-publish.yml -f tag="$TAG"
