@@ -1,0 +1,92 @@
+name: 硬件测试反馈
+description: 报告 CatWrt Next 在实体机或其他虚拟化平台上的测试结果
+title: "[硬件] "
+labels: ["hardware"]
+body:
+  - type: markdown
+    id: privacy
+    attributes:
+      value: |
+        发布前请删除公网 IP、MAC 地址、PPPoE 账号等个人信息。
+  - type: input
+    id: firmware-version
+    attributes:
+      label: 固件版本
+      placeholder: v26.12
+    validations:
+      required: true
+  - type: dropdown
+    id: image
+    attributes:
+      label: 镜像
+      description: 前四项为 img.gz 镜像。
+      options:
+        - squashfs-efi
+        - squashfs-bios
+        - ext4-efi
+        - ext4-bios
+        - qcow2（虚拟机）
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: 设备
+      description: 请填写整机或主板型号及 CPU 型号。
+    validations:
+      required: true
+  - type: textarea
+    id: network-interfaces
+    attributes:
+      label: 网卡型号及端口数量
+      description: 可粘贴 `lspci -nn | grep -i eth` 或 `ip -br link` 的输出，请先删除个人信息。
+    validations:
+      required: true
+  - type: dropdown
+    id: boot-disk
+    attributes:
+      label: 启动磁盘类型
+      options:
+        - NVMe
+        - SATA
+        - USB
+        - 虚拟磁盘
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 平台
+      options:
+        - 实体机
+        - Proxmox VE
+        - ESXi
+        - Hyper-V
+        - 其他
+  - type: dropdown
+    id: wan-access
+    attributes:
+      label: WAN 接入方式
+      options:
+        - DHCP
+        - PPPoE
+        - 静态地址
+        - 其他
+  - type: checkboxes
+    id: results
+    attributes:
+      label: 测试结果
+      description: 请勾选已测试通过的项目，所有项目均为可选。
+      options:
+        - label: 正常启动
+        - label: 所有网口均被识别
+        - label: LAN/WAN 网口顺序符合预期（eth0 为 LAN，eth1 为 WAN）
+        - label: 可以上网
+        - label: IPv6 正常工作
+        - label: LuCI 可以打开
+        - label: 关机插件能正常关闭设备电源
+        - label: cattools 系统升级正常工作
+  - type: textarea
+    id: problems-and-logs
+    attributes:
+      label: 问题与日志
+      description: 请粘贴相关的 `logread` / `dmesg` 日志行，发布前删除个人信息。
+      render: text
