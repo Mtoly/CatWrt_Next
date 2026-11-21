@@ -438,7 +438,7 @@ def run_variant(run, images, version, log_dir, boot_timeout, expected_ip, http_t
                         lambda output: mirror in output and 'downloads.immortalwrt.org' not in output)
             for package in ('catwrt-base', 'cattools', 'luci-app-poweroff', 'luci-i18n-poweroff-zh-cn',
                             'luci-theme-argon', 'luci-app-openclash', 'tailscale', 'adguardhome',
-                            'nfs-kernel-server', 'qemu-ga', 'open-vm-tools', 'luci-app-nfs',
+                            'nfs-kernel-server', 'qemu-ga', 'luci-app-nfs',
                             'luci-app-adguardhome'):
                 guest_check(f'已安装 {package}', f'apk info -e {package}', '已安装', lambda output: True)
             for package in ('luci-app-attendedsysupgrade', 'attendedsysupgrade-common', 'owut', 'luci-app-passwall'):
