@@ -23,6 +23,7 @@ endef
 
 define Package/catwrt-base/conffiles
 /etc/config/catwrt
+/etc/sysctl.d/50-catwrt-bbr.conf
 endef
 
 define Build/Compile
@@ -30,6 +31,7 @@ endef
 
 define Package/catwrt-base/install
 	$(INSTALL_DIR) $(1)/etc/config $(1)/etc/uci-defaults
+	$(INSTALL_DIR) $(1)/etc/sysctl.d
 	$(INSTALL_DIR) $(1)/etc/apk/keys $(1)/etc/apk/repositories.d
 	# base-files owns /etc/banner; ship ours here and copy it on first boot.
 	$(INSTALL_DIR) $(1)/usr/share/catwrt
@@ -38,6 +40,7 @@ define Package/catwrt-base/install
 	$(INSTALL_DATA) ./files/etc/catwrt_release $(1)/etc/catwrt_release
 	$(SED) 's|@CATWRT_VERSION@|$(CATWRT_VERSION)|g; s|@IMMORTALWRT_VERSION@|$(IMMORTALWRT_VERSION)|g; s|@ARCH@|$(CATWRT_ARCH)|g; s|@BUILD_DATE@|$(CATWRT_BUILD_DATE)|g' $(1)/etc/catwrt_release
 	$(INSTALL_DATA) ./files/etc/config/catwrt $(1)/etc/config/catwrt
+	$(INSTALL_DATA) ./files/etc/sysctl.d/50-catwrt-bbr.conf $(1)/etc/sysctl.d/50-catwrt-bbr.conf
 	$(INSTALL_DATA) ./files/etc/apk/keys/catwrt-next.pem $(1)/etc/apk/keys/catwrt-next.pem
 	$(INSTALL_DATA) ./files/etc/apk/repositories.d/catwrt.list $(1)/etc/apk/repositories.d/catwrt.list
 	$(SED) 's|@CATWRT_VERSION@|$(CATWRT_VERSION)|g; s|@ARCH@|$(CATWRT_ARCH)|g' $(1)/etc/apk/repositories.d/catwrt.list
