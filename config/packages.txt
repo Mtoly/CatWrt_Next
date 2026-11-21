@@ -2,6 +2,27 @@
 catwrt-base
 cattools
 
+# 驱动与常用工具（对照原版 CatWrt 补齐）。
+intel-microcode
+amd64-microcode
+kmod-tcp-bbr
+kmod-atlantic
+kmod-bnx2x
+kmod-iavf
+kmod-macsec
+kmod-sfp
+kmod-usb-net-cdc-ncm
+kmod-usb-net-rndis
+kmod-usb-net-ipheth
+kmod-usb-net-aqc111
+jq
+pciutils
+pciids
+usbutils
+htop
+nano
+openssl-util
+
 # Remove stock upgrade tools: they replace CatWrt Next with upstream firmware.
 -luci-app-attendedsysupgrade
 -luci-i18n-attendedsysupgrade-zh-cn
