@@ -9,18 +9,46 @@ if [ -f /usr/share/catwrt/banner.failsafe ]; then
 	cp /usr/share/catwrt/banner.failsafe /etc/banner.failsafe
 fi
 
+lan_ipaddr=$(uci -q get network.lan.ipaddr)
+hostname=$(uci -q get 'system.@system[0].hostname')
+root_hash=$(awk -F: '$1 == "root" { print $2; exit }' /etc/shadow)
+lean_default_hash='$1$V4UetPzk$CYXluq4wUazHjmCDBCqXF.'
+migrated=0
+case "$lan_ipaddr" in
+'' | 192.168.1.1/24 | 192.168.1.1) ;;
+*) migrated=1 ;;
+esac
+case "$hostname" in
+'' | ImmortalWrt | OpenWrt) ;;
+*) migrated=1 ;;
+esac
+if [ "$migrated" = '1' ] || [ "$root_hash" = "$lean_default_hash" ]; then
+	printf 'source=foreign\n' >/etc/catwrt_migrated
+fi
+if [ "$root_hash" = "$lean_default_hash" ]; then
+	sed -i 's/^root:.*/root::0:0:99999:7:::/' /etc/shadow
+fi
+
 [ "$(uci -q get 'system.@imm_init[0].catwrt_init')" = '1' ] && exit 0
 
-uci set 'system.@system[0].hostname=CatWrt'
-uci -q delete 'network.lan.ipaddr'
-uci add_list 'network.lan.ipaddr=192.168.1.4/24'
+case "$hostname" in
+'' | ImmortalWrt | OpenWrt) uci set 'system.@system[0].hostname=CatWrt' ;;
+esac
+case "$lan_ipaddr" in
+'' | 192.168.1.1/24 | 192.168.1.1)
+	uci -q delete 'network.lan.ipaddr'
+	uci add_list 'network.lan.ipaddr=192.168.1.4/24'
+	;;
+esac
 
-uci set 'luci.main.lang=zh_cn'
-if [ -d /www/luci-static/argon ]; then
+case "$(uci -q get luci.main.lang)" in
+'' | en) uci set 'luci.main.lang=zh_cn' ;;
+esac
+if [ -z "$(uci -q get luci.main.mediaurlbase)" ] && [ -d /www/luci-static/argon ]; then
 	uci set 'luci.main.mediaurlbase=/luci-static/argon'
 fi
 
-for service in openclash tailscale zerotier appfilter mosdns; do
+for service in openclash tailscale zerotier appfilter mosdns adguardhome nfsd qemu-ga vmtoolsd; do
 	if [ -f "/etc/init.d/$service" ]; then
 		"/etc/init.d/$service" disable
 	fi
