@@ -439,7 +439,12 @@ def run_variant(run, images, version, log_dir, boot_timeout, expected_ip, http_t
             for package in ('catwrt-base', 'cattools', 'luci-app-poweroff', 'luci-i18n-poweroff-zh-cn',
                             'luci-theme-argon', 'luci-app-openclash', 'tailscale', 'adguardhome',
                             'nfs-kernel-server', 'qemu-ga', 'luci-app-nfs',
-                            'luci-app-adguardhome'):
+                            'luci-app-adguardhome',
+                            'intel-microcode', 'amd64-microcode', 'kmod-tcp-bbr',
+                            'kmod-atlantic', 'kmod-bnx2x', 'kmod-iavf', 'kmod-macsec', 'kmod-sfp',
+                            'kmod-usb-net-cdc-ncm', 'kmod-usb-net-rndis',
+                            'kmod-usb-net-ipheth', 'kmod-usb-net-aqc111',
+                            'jq', 'pciutils', 'pciids', 'usbutils', 'htop', 'nano', 'openssl-util'):
                 guest_check(f'已安装 {package}', f'apk info -e {package}', '已安装', lambda output: True)
             for package in ('luci-app-attendedsysupgrade', 'attendedsysupgrade-common', 'owut', 'luci-app-passwall'):
                 guest_check(f'未安装 {package}', f'apk info -e {package}; smoke_status=$?; '
@@ -459,6 +464,7 @@ def run_variant(run, images, version, log_dir, boot_timeout, expected_ip, http_t
             guest_check('cattools 非交互退出', 'cattools </dev/null 2>&1; echo "exit=$?"',
                         'exit=1 且输出含“交互式终端”、不含 IoError',
                         lambda output: 'exit=1' in output and '交互式终端' in output and 'IoError' not in output)
+            guest_check('默认拥塞控制', 'sysctl -n net.ipv4.tcp_congestion_control', 'bbr')
 
             url = f'http://127.0.0.1:{port}/cgi-bin/luci/'
             check_luci_http(run, console, url, expected_ip, http_timeout, command_timeout)
@@ -642,7 +648,7 @@ class SelfTest(unittest.TestCase):
                 self.assertIn('fixture diagnostic', detail)
 
     def test_check_failures_shutdown_and_interrupt(self):
-        for scenario in ('success', 'success-kvm', 'wrong-lan', 'bare-lan', 'wrong-prefix',
+        for scenario in ('success', 'success-kvm', 'wrong-lan', 'bare-lan', 'wrong-prefix', 'wrong-bbr',
                          'command-timeout', 'boot-failure', 'shutdown-timeout', 'interrupt'):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory(prefix='catwrt-fixture-') as work:
                 root = Path(work)
@@ -678,6 +684,7 @@ class SelfTest(unittest.TestCase):
                         'cat /etc/apk/repositories.d/distfeeds.list': 'https://mirrors.vsean.net/openwrt',
                         'command -v cattools': '/usr/bin/cattools',
                         'cattools </dev/null 2>&1; echo "exit=$?"': '错误: cattools 需要交互式终端运行，请通过 SSH 或串口终端使用\nexit=1',
+                        'sysctl -n net.ipv4.tcp_congestion_control': 'cubic' if scenario == 'wrong-bbr' else 'bbr',
                         'ip -4 addr show br-lan': 'inet 192.168.1.1/24' if scenario == 'wrong-lan' else 'inet 192.168.1.4/24',
                     }
                     if text in values:
@@ -719,6 +726,8 @@ class SelfTest(unittest.TestCase):
                     self.assertIn('FAIL LAN 地址：预期=192.168.1.1/24；实际=192.168.1.4/24', output.getvalue())
                 if scenario == 'wrong-prefix':
                     self.assertIn('FAIL LAN 地址：预期=192.168.1.4/24；实际=192.168.1.4/32', output.getvalue())
+                if scenario == 'wrong-bbr':
+                    self.assertIn('FAIL 默认拥塞控制：预期=bbr；实际=cubic', output.getvalue())
 
     def test_luci_http_waits_for_network_and_retries(self):
         clock = [500.0]
