@@ -48,7 +48,7 @@ case "$lan_ipaddr" in
 esac
 
 case "$(uci -q get luci.main.lang)" in
-'' | en) uci set 'luci.main.lang=zh_cn' ;;
+'' | auto | en) uci set 'luci.main.lang=zh_cn' ;;
 esac
 if [ -z "$(uci -q get luci.main.mediaurlbase)" ] && [ -d /www/luci-static/argon ]; then
 	uci set 'luci.main.mediaurlbase=/luci-static/argon'

@@ -59,7 +59,7 @@ assert_line 'network.lan.ipaddr=192.0.2.1/24' "$TEST_ROOT/state"
 [ "$(grep -c '^network\.lan\.ipaddr=' "$TEST_ROOT/state")" -eq 1 ]
 assert_line 'system.@system[0].timezone=CST-8' "$TEST_ROOT/state"
 assert_line 'system.@system[0].zonename=Asia/Shanghai' "$TEST_ROOT/state"
-assert_line 'luci.main.lang=auto' "$TEST_ROOT/state"
+assert_line 'luci.main.lang=zh_cn' "$TEST_ROOT/state"
 assert_line 'luci.main.mediaurlbase=/luci-static/bootstrap' "$TEST_ROOT/state"
 assert_line 'system.@imm_init[0]=imm_init' "$TEST_ROOT/state"
 assert_line 'system.@imm_init[0].catwrt_init=1' "$TEST_ROOT/state"
@@ -136,7 +136,7 @@ printf 'PASS: fresh installation receives stock defaults\n'
 cat >"$TEST_ROOT/state" <<'EOF'
 system.@system[0].hostname=MyRouter
 network.lan.ipaddr=192.0.2.99/24
-luci.main.lang=auto
+luci.main.lang=de
 luci.main.mediaurlbase=/luci-static/bootstrap
 EOF
 cat >"$TEST_ROOT/shadow" <<'EOF'
@@ -149,7 +149,7 @@ assert_line 'system.@system[0].hostname=MyRouter' "$TEST_ROOT/state"
 assert_line 'network.lan.ipaddr=192.0.2.99/24' "$TEST_ROOT/state"
 assert_absent 'delete network.lan.ipaddr' "$TEST_ROOT/uci.log"
 assert_absent 'add_list network.lan.ipaddr=' "$TEST_ROOT/uci.log"
-assert_line 'luci.main.lang=auto' "$TEST_ROOT/state"
+assert_line 'luci.main.lang=de' "$TEST_ROOT/state"
 assert_line 'luci.main.mediaurlbase=/luci-static/bootstrap' "$TEST_ROOT/state"
 assert_line 'root::0:0:99999:7:::' "$TEST_ROOT/shadow"
 assert_line 'daemon:*:0:0:99999:7:::' "$TEST_ROOT/shadow"
@@ -158,13 +158,20 @@ assert_line 'source=foreign' "$TEST_ROOT/catwrt_migrated"
 printf 'PASS: migration preserves user settings and clears the legacy password\n'
 
 # Empty settings and the alternate stock spelling also receive defaults.
-for stock in empty openwrt; do
+for stock in empty openwrt auto; do
 	: >"$TEST_ROOT/state"
 	if [ "$stock" = openwrt ]; then
 		cat >"$TEST_ROOT/state" <<'EOF'
 system.@system[0].hostname=OpenWrt
 network.lan.ipaddr=192.168.1.1
 luci.main.lang=en
+EOF
+	fi
+	if [ "$stock" = auto ]; then
+		cat >"$TEST_ROOT/state" <<'EOF'
+system.@system[0].hostname=ImmortalWrt
+network.lan.ipaddr=192.168.1.1/24
+luci.main.lang=auto
 EOF
 	fi
 	rm -f "$TEST_ROOT/catwrt_migrated"
