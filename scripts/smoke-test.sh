@@ -456,6 +456,9 @@ def run_variant(run, images, version, log_dir, boot_timeout, expected_ip, http_t
                          '/www/luci-static/resources/view/poweroff.js', '/etc/apk/keys/catwrt-next.pem'):
                 guest_check(f'文件 {path}', f'test -f {shlex.quote(path)}', '存在', lambda output: True)
             guest_check('cattools 命令', 'command -v cattools', '可执行命令', bool)
+            guest_check('cattools 非交互退出', 'cattools </dev/null 2>&1; echo "exit=$?"',
+                        'exit=1 且输出含“交互式终端”、不含 IoError',
+                        lambda output: 'exit=1' in output and '交互式终端' in output and 'IoError' not in output)
 
             url = f'http://127.0.0.1:{port}/cgi-bin/luci/'
             check_luci_http(run, console, url, expected_ip, http_timeout, command_timeout)
@@ -674,6 +677,7 @@ class SelfTest(unittest.TestCase):
                         "uci get 'system.@imm_init[0].apk_mirror'": 'https://mirrors.vsean.net/openwrt',
                         'cat /etc/apk/repositories.d/distfeeds.list': 'https://mirrors.vsean.net/openwrt',
                         'command -v cattools': '/usr/bin/cattools',
+                        'cattools </dev/null 2>&1; echo "exit=$?"': '错误: cattools 需要交互式终端运行，请通过 SSH 或串口终端使用\nexit=1',
                         'ip -4 addr show br-lan': 'inet 192.168.1.1/24' if scenario == 'wrong-lan' else 'inet 192.168.1.4/24',
                     }
                     if text in values:

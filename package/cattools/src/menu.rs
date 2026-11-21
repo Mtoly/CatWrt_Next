@@ -14,6 +14,10 @@ fn migration_notice(marker_present: bool) -> Option<String> {
     })
 }
 
+pub(crate) fn requires_terminal(stdin_is_terminal: bool, stdout_is_terminal: bool) -> bool {
+    !stdin_is_terminal || !stdout_is_terminal
+}
+
 #[derive(Debug, Clone)]
 pub enum MenuOption {
     SetIp,
@@ -42,6 +46,13 @@ pub enum UtilitiesMenuOption {
 pub struct Menu;
 
 impl Menu {
+    pub(crate) fn print_migration_notice() {
+        if let Some(notice) = migration_notice(std::path::Path::new(MIGRATION_MARKER_PATH).exists())
+        {
+            println!("{notice}");
+        }
+    }
+
     pub fn show() -> Result<MenuOption> {
         let options = [
             "设置 IP 地址",
@@ -56,10 +67,7 @@ impl Menu {
             "退出",
         ];
 
-        if let Some(notice) = migration_notice(std::path::Path::new(MIGRATION_MARKER_PATH).exists())
-        {
-            println!("{notice}");
-        }
+        Self::print_migration_notice();
 
         let selection = Select::new()
             .with_prompt("CatWrt 配置工具 - 请选择功能")
@@ -116,7 +124,27 @@ impl Menu {
 
 #[cfg(test)]
 mod tests {
-    use super::{MIGRATION_DOC_URL, migration_notice};
+    use super::{MIGRATION_DOC_URL, migration_notice, requires_terminal};
+
+    #[test]
+    fn terminal_input_and_output_allow_interaction() {
+        assert!(!requires_terminal(true, true));
+    }
+
+    #[test]
+    fn nonterminal_input_requires_terminal() {
+        assert!(requires_terminal(false, true));
+    }
+
+    #[test]
+    fn nonterminal_output_requires_terminal() {
+        assert!(requires_terminal(true, false));
+    }
+
+    #[test]
+    fn nonterminal_input_and_output_require_terminal() {
+        assert!(requires_terminal(false, false));
+    }
 
     #[test]
     fn migration_notice_with_marker_contains_document_link() {
