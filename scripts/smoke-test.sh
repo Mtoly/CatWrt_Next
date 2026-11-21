@@ -437,13 +437,16 @@ def run_variant(run, images, version, log_dir, boot_timeout, expected_ip, http_t
                         '包含 mirrors.vsean.net/openwrt 且无 downloads.immortalwrt.org',
                         lambda output: mirror in output and 'downloads.immortalwrt.org' not in output)
             for package in ('catwrt-base', 'cattools', 'luci-app-poweroff', 'luci-i18n-poweroff-zh-cn',
-                            'luci-theme-argon', 'luci-app-openclash', 'tailscale'):
+                            'luci-theme-argon', 'luci-app-openclash', 'tailscale', 'adguardhome',
+                            'nfs-kernel-server', 'qemu-ga', 'open-vm-tools', 'luci-app-nfs',
+                            'luci-app-adguardhome'):
                 guest_check(f'已安装 {package}', f'apk info -e {package}', '已安装', lambda output: True)
             for package in ('luci-app-attendedsysupgrade', 'attendedsysupgrade-common', 'owut', 'luci-app-passwall'):
                 guest_check(f'未安装 {package}', f'apk info -e {package}; smoke_status=$?; '
                             'printf "apk_exit=%s\\n" "$smoke_status"; '
                             'test "$smoke_status" -eq 1', '未安装（apk 退出码 1）', lambda output: True)
-            for service in ('openclash', 'tailscale', 'zerotier', 'appfilter', 'mosdns'):
+            for service in ('openclash', 'tailscale', 'zerotier', 'appfilter', 'mosdns',
+                            'adguardhome', 'nfsd', 'qemu-ga', 'vmtoolsd'):
                 command = (f'if test ! -e /etc/init.d/{service}; then echo SKIP; '
                            f'elif /etc/init.d/{service} enabled; then echo ENABLED; '
                            'else echo DISABLED; fi')

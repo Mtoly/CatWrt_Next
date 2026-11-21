@@ -54,3 +54,10 @@ luci-app-appfilter
 luci-i18n-appfilter-zh-cn
 luci-app-mosdns
 luci-i18n-mosdns-zh-cn
+luci-app-adguardhome
+adguardhome
+luci-app-nfs
+luci-i18n-nfs-zh-cn
+nfs-kernel-server
+qemu-ga
+open-vm-tools
