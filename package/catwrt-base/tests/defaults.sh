@@ -177,7 +177,7 @@ done
 printf 'PASS: empty and alternate stock settings receive defaults\n'
 
 # Password cleanup precedes the init guard and must not match a hash prefix.
-legacy_hash='$1$V4UetPzk$CYXluq4wUazHjmCDBCqXF.'
+legacy_hash="\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF."
 for hash in "$legacy_hash" "$legacy_hash-extra" '*'; do
 	cat >"$TEST_ROOT/state" <<'EOF'
 system.@system[0].hostname=ImmortalWrt

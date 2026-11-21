@@ -12,7 +12,7 @@ fi
 lan_ipaddr=$(uci -q get network.lan.ipaddr)
 hostname=$(uci -q get 'system.@system[0].hostname')
 root_hash=$(awk -F: '$1 == "root" { print $2; exit }' /etc/shadow)
-lean_default_hash='$1$V4UetPzk$CYXluq4wUazHjmCDBCqXF.'
+lean_default_hash="\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF."
 migrated=0
 case "$lan_ipaddr" in
 '' | 192.168.1.1/24 | 192.168.1.1) ;;
