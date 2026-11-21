@@ -42,6 +42,13 @@ pub enum UtilitiesMenuOption {
 pub struct Menu;
 
 impl Menu {
+    pub(crate) fn print_migration_notice() {
+        if let Some(notice) = migration_notice(std::path::Path::new(MIGRATION_MARKER_PATH).exists())
+        {
+            println!("{notice}");
+        }
+    }
+
     pub fn show() -> Result<MenuOption> {
         let options = [
             "设置 IP 地址",
@@ -56,10 +63,7 @@ impl Menu {
             "退出",
         ];
 
-        if let Some(notice) = migration_notice(std::path::Path::new(MIGRATION_MARKER_PATH).exists())
-        {
-            println!("{notice}");
-        }
+        Self::print_migration_notice();
 
         let selection = Select::new()
             .with_prompt("CatWrt 配置工具 - 请选择功能")
