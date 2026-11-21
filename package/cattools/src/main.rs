@@ -29,10 +29,7 @@ fn main() -> Result<()> {
     // Parse CLI arguments
     let _args = Cli::parse();
 
-    if menu::requires_terminal(
-        std::io::stdin().is_terminal(),
-        std::io::stdout().is_terminal(),
-    ) {
+    if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         Menu::print_migration_notice();
         eprintln!("错误: cattools 需要交互式终端运行，请通过 SSH 或串口终端使用");
         std::process::exit(1);

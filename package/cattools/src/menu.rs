@@ -14,10 +14,6 @@ fn migration_notice(marker_present: bool) -> Option<String> {
     })
 }
 
-pub(crate) fn requires_terminal(stdin_is_terminal: bool, stdout_is_terminal: bool) -> bool {
-    !stdin_is_terminal || !stdout_is_terminal
-}
-
 #[derive(Debug, Clone)]
 pub enum MenuOption {
     SetIp,
@@ -124,27 +120,7 @@ impl Menu {
 
 #[cfg(test)]
 mod tests {
-    use super::{MIGRATION_DOC_URL, migration_notice, requires_terminal};
-
-    #[test]
-    fn terminal_input_and_output_allow_interaction() {
-        assert!(!requires_terminal(true, true));
-    }
-
-    #[test]
-    fn nonterminal_input_requires_terminal() {
-        assert!(requires_terminal(false, true));
-    }
-
-    #[test]
-    fn nonterminal_output_requires_terminal() {
-        assert!(requires_terminal(true, false));
-    }
-
-    #[test]
-    fn nonterminal_input_and_output_require_terminal() {
-        assert!(requires_terminal(false, false));
-    }
+    use super::{MIGRATION_DOC_URL, migration_notice};
 
     #[test]
     fn migration_notice_with_marker_contains_document_link() {
