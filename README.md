@@ -10,6 +10,12 @@ CatWrt Next 以 ImmortalWrt 25.12.2 为底座，延续 CatWrt 的默认配置、
 - 默认 LAN 地址为 `192.168.1.4`，LuCI 默认使用简体中文。
 - 首次启动时 root 没有密码，LuCI 会提示设置密码；请在首次登录后完成设置。
 - 软件包管理器为 apk-tools v3，防火墙使用 fw4 / nftables。
+- 预装 qemu-ga（默认停用），便于在 PVE 等平台管理虚拟机；open-vm-tools 与 qemu-ga 都要提供 `/sbin/shutdown`，两者不能共存，VMware 用户需先卸载 qemu-ga 再安装 open-vm-tools。
+
+## 从原版 CatWrt 迁移
+
+从原版 CatWrt 迁移前，请先阅读[迁移文档](docs/migration.md)。
+文档说明版本要求、备份与迁移步骤、迁移后检查清单，以及不兼容项和回滚方法。
 
 ## 构建与验证
 

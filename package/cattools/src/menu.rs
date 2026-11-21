@@ -3,6 +3,17 @@
 use crate::error::Result;
 use dialoguer::Select;
 
+const MIGRATION_MARKER_PATH: &str = "/etc/catwrt_migrated";
+const MIGRATION_DOC_URL: &str = "https://github.com/Mtoly/CatWrt_Next/blob/main/docs/migration.md";
+
+fn migration_notice(marker_present: bool) -> Option<String> {
+    marker_present.then(|| {
+        format!(
+            "提示：当前配置可能来自其他固件（如原版 CatWrt），请参考迁移说明：{MIGRATION_DOC_URL}"
+        )
+    })
+}
+
 #[derive(Debug, Clone)]
 pub enum MenuOption {
     SetIp,
@@ -44,6 +55,11 @@ impl Menu {
             "实用工具",
             "退出",
         ];
+
+        if let Some(notice) = migration_notice(std::path::Path::new(MIGRATION_MARKER_PATH).exists())
+        {
+            println!("{notice}");
+        }
 
         let selection = Select::new()
             .with_prompt("CatWrt 配置工具 - 请选择功能")
@@ -95,5 +111,22 @@ impl Menu {
             6 => UtilitiesMenuOption::Back,
             _ => UtilitiesMenuOption::Back,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MIGRATION_DOC_URL, migration_notice};
+
+    #[test]
+    fn migration_notice_with_marker_contains_document_link() {
+        let notice = migration_notice(true).expect("migration marker should produce a notice");
+        assert!(notice.contains(MIGRATION_DOC_URL));
+        assert!(notice.contains("migration.md"));
+    }
+
+    #[test]
+    fn migration_notice_without_marker_is_absent() {
+        assert_eq!(migration_notice(false), None);
     }
 }
