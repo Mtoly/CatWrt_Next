@@ -56,14 +56,14 @@ own_package_name() {
 	[[ $filename =~ ^(.+)-([0-9][A-Za-z0-9._+~]*(-r[0-9]+)?)\.apk$ ]] || return 1
 	name=${BASH_REMATCH[1]}
 	case "$name" in
-	cattools | catwrt-base | luci-app-poweroff | luci-i18n-poweroff-?*) printf '%s\n' "$name" ;;
+	cattools | catwrt-base | UAmask | luci-app-poweroff | luci-i18n-poweroff-?*) printf '%s\n' "$name" ;;
 	*) return 1 ;;
 	esac
 }
 
 select_export_packages() {
 	local directory=$1 with_poweroff=$2 listing artifact name
-	local -a expected=(cattools catwrt-base) selected=()
+	local -a expected=(cattools catwrt-base UAmask) selected=()
 	local -A counts=()
 	if [[ $with_poweroff == 1 ]]; then
 		expected+=(luci-app-poweroff luci-i18n-poweroff-zh-cn)
@@ -89,7 +89,7 @@ select_export_packages() {
 
 self_test() {
 	local fixture selected output artifact name checks=0 transport_status=0 response
-	local -a own_apks=(cattools-1.0.1-r1.apk catwrt-base-1-r1.apk
+	local -a own_apks=(cattools-1.0.1-r1.apk catwrt-base-1-r1.apk UAmask-0.4.3-r1.apk
 		luci-app-poweroff-1-r1.apk luci-i18n-poweroff-zh-cn-0.261116.52078.apk)
 	fixture=$(mktemp -d)
 	trap 'rm -rf -- "$fixture"' EXIT
@@ -139,7 +139,8 @@ self_test() {
 	unset -f curl
 	mkdir "$fixture/packages"
 	for artifact in "${own_apks[@]}" cattools-extra-1.apk cattools-foo.apk \
-		luci-base-1.apk ucode-1.apk luci-app-poweroff-ng-1.apk; do
+		luci-base-1.apk ucode-1.apk luci-app-poweroff-ng-1.apk uamask-0.4.3-r1.apk \
+		UAmask-extra-1.apk; do
 		: >"$fixture/packages/$artifact"
 	done
 	selected=$(select_export_packages "$fixture/packages" 1)
@@ -157,7 +158,9 @@ self_test() {
 		checks=$((checks + 1))
 	done
 	selected=$(select_export_packages "$fixture/packages" 0)
-	[[ $selected == "$fixture/packages/cattools-1.0.1-r1.apk"$'\n'"$fixture/packages/catwrt-base-1-r1.apk" ]]
+	output=$(printf '%s\n' "$fixture/packages/UAmask-0.4.3-r1.apk" \
+		"$fixture/packages/cattools-1.0.1-r1.apk" "$fixture/packages/catwrt-base-1-r1.apk" | sort)
+	[[ $selected == "$output" ]]
 	checks=$((checks + 1))
 	: >"$fixture/packages/cattools-2-r1.apk"
 	if output=$(select_export_packages "$fixture/packages" 1 2>&1); then
@@ -208,6 +211,13 @@ done
 # release.env is trusted repository configuration.
 # shellcheck disable=SC1091
 source config/release.env
+# Pinned UAmask source; see config/uamask.env.
+# shellcheck disable=SC1091
+source config/uamask.env
+# UAMASK_* come from config/uamask.env, which ShellCheck cannot follow.
+# shellcheck disable=SC2153
+[[ $UAMASK_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Invalid UAMASK_VERSION'
+[[ $UAMASK_TARBALL_SHA256 =~ ^[0-9a-f]{64}$ ]] || fail 'Invalid UAMASK_TARBALL_SHA256'
 [[ $IMMORTALWRT_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Invalid IMMORTALWRT_VERSION'
 # TARGET and SUBTARGET come from release.env, which ShellCheck cannot follow.
 # shellcheck disable=SC2153
@@ -301,31 +311,65 @@ if readelf -l "$cattools_bin" | grep -q INTERP || readelf -d "$cattools_bin" | g
 	fail "Binary has a dynamic interpreter or shared-library dependency: $cattools_bin"
 fi
 
+# UAmask is GPL-3.0-only: keep its sources out of this GPL-2.0-only repository and
+# fetch the pinned upstream release at build time. Only the packaging Makefile is ours.
+uamask_version=$UAMASK_VERSION
+uamask_archive="$dl/UAmask-$uamask_version.tar.gz"
+if [[ ! -f $uamask_archive ]]; then
+	download "$UAMASK_TARBALL_URL" "$uamask_archive"
+fi
+verify_sha256 "$uamask_archive" "$UAMASK_TARBALL_SHA256"
+uamask_src="$work/uamask-src"
+rm -rf -- "$uamask_src"
+mkdir -p -- "$uamask_src"
+tar -xzf "$uamask_archive" -C "$uamask_src" --strip-components=1
+for required in go.mod go.sum src files/UAmask.init files/UAmask.uci; do
+	[[ -e $uamask_src/$required ]] || fail "Invalid UAmask source layout: missing $required in $uamask_archive"
+done
+(
+	export GOTOOLCHAIN=local GO111MODULE=on CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+	export GOFLAGS=-mod=mod GOPATH="$work/go" GOMODCACHE="$work/go-mod" GOCACHE="$work/go-cache"
+	cd "$uamask_src"
+	go build -trimpath -ldflags "-s -w -X main.version=$uamask_version" -o "$work/UAmask" ./src
+)
+uamask_bin="$work/UAmask"
+[[ -f $uamask_bin ]] || fail "Missing Go build output: $uamask_bin"
+binary_info=$(file -b "$uamask_bin")
+[[ $binary_info == *'ELF 64-bit'* && $binary_info == *'x86-64'* && $binary_info == *'statically linked'* ]] || fail "Expected a static x86_64 ELF: $uamask_bin; file=$binary_info"
+if readelf -l "$uamask_bin" | grep -q INTERP || readelf -d "$uamask_bin" | grep -q NEEDED; then
+	fail "Binary has a dynamic interpreter or shared-library dependency: $uamask_bin"
+fi
+
 rm -rf -- "$sdk/package/catwrt"
 wrapper_dir="$sdk/package/catwrt/cattools"
 mkdir -p "$wrapper_dir"
 cp -a "$repo/package/catwrt-base" "$sdk/package/catwrt/"
 cp "$repo/package/cattools/Makefile" "$wrapper_dir/Makefile"
 cp "$cattools_bin" "$wrapper_dir/cattools"
-packages=(catwrt-base cattools)
+[[ -f $repo/package/uamask/Makefile ]] || fail 'Missing package/uamask/Makefile'
+cp -a "$repo/package/uamask" "$sdk/package/catwrt/"
+packages=(catwrt-base cattools UAmask)
 with_poweroff=0
 if [[ -d $repo/package/luci-app-poweroff ]]; then
 	[[ -f $repo/package/luci-app-poweroff/Makefile ]] || fail 'Missing package/luci-app-poweroff/Makefile'
 	cp -a "$repo/package/luci-app-poweroff" "$sdk/package/catwrt/"
 	packages+=(luci-app-poweroff)
 	with_poweroff=1
-	(
-		cd "$sdk"
-		./scripts/feeds update base luci || fail "./scripts/feeds update base luci failed in $sdk"
-		./scripts/feeds install -p base ucode libnl-tiny libubox ubus rpcd lua || fail "./scripts/feeds install -p base ucode libnl-tiny libubox ubus rpcd lua failed in $sdk"
-		./scripts/feeds install luci-base || fail "./scripts/feeds install luci-base failed in $sdk"
-	)
 fi
+# UAmask declares DEPENDS on luci-compat, so its package definition must be known
+# to the SDK even though UAmask is not preinstalled in the image.
+(
+	cd "$sdk"
+	./scripts/feeds update base luci || fail "./scripts/feeds update base luci failed in $sdk"
+	./scripts/feeds install -p base ucode libnl-tiny libubox ubus rpcd lua || fail "./scripts/feeds install -p base ucode libnl-tiny libubox ubus rpcd lua failed in $sdk"
+	./scripts/feeds install luci-base luci-compat || fail "./scripts/feeds install luci-base luci-compat failed in $sdk"
+)
 
 cd "$sdk"
 make_args=("CATWRT_VERSION=$CATWRT_VERSION" "IMMORTALWRT_VERSION=$IMMORTALWRT_VERSION"
 	"CATWRT_ARCH=$ARCH" "CATWRT_BUILD_DATE=$(date -u +%Y-%m-%d)"
-	"CATTOOLS_BIN=$wrapper_dir/cattools")
+	"CATTOOLS_BIN=$wrapper_dir/cattools" "UAMASK_BIN=$uamask_bin"
+	"UAMASK_SRC=$uamask_src" "UAMASK_FILES=$uamask_src/files")
 cat >.config <<'EOF'
 CONFIG_ALL=n
 CONFIG_ALL_NONSHARED=n
@@ -345,9 +389,13 @@ if [[ -d $sdk/bin/packages ]]; then
 	done
 fi
 for package in "${packages[@]}"; do
-	# Reinstall payloads and sign with the current key on cached SDK runs too.
-	make "${make_args[@]}" "package/$package/clean" V=s
-	make "${make_args[@]}" "package/$package/compile" V=s
+	# make targets address the SDK package directory, which is lowercase for UAmask
+	# (the APK/package name is UAmask). Reinstall payloads and sign with the current
+	# key on cached SDK runs too.
+	dir=$package
+	[[ $package == UAmask ]] && dir=uamask
+	make "${make_args[@]}" "package/$dir/clean" V=s
+	make "${make_args[@]}" "package/$dir/compile" V=s
 done
 out_dir=$output_path
 mkdir -p -- "$out_dir"

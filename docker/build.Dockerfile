@@ -2,6 +2,9 @@ FROM debian:12
 
 # Pin the Rust release; keep it equal to the toolchain in docker/verify.Dockerfile.
 ARG RUST_TOOLCHAIN=1.100.0
+# Pin the Go release used to cross-compile UAmask (package/uamask is built from upstream source).
+ARG GO_VERSION=1.27.4
+ARG GO_SHA256=7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
@@ -14,7 +17,17 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 ENV CARGO_HOME=/opt/cargo RUSTUP_HOME=/opt/rustup
-ENV PATH="/opt/cargo/bin:${PATH}"
+ENV PATH="/opt/cargo/bin:/opt/go/bin:${PATH}"
+
+RUN work="$(mktemp -d)" \
+    && cd "$work" \
+    && curl --fail --show-error --silent --location \
+        "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o go.tar.gz \
+    && printf '%s  go.tar.gz\n' "$GO_SHA256" | sha256sum --check - \
+    && tar -C /opt -xzf go.tar.gz \
+    && chmod -R a+rX /opt/go \
+    && cd / \
+    && rm -rf "$work"
 
 RUN work="$(mktemp -d)" \
     && cd "$work" \

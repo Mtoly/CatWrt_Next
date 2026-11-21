@@ -19,7 +19,9 @@ CatWrt Next 以 ImmortalWrt 25.12.2 为底座，延续 CatWrt 的默认配置、
 
 ## 构建与验证
 
-正式构建在 GitHub Actions 中使用 ImmortalWrt 25.12 ImageBuilder 和 SDK：ImageBuilder 组装官方内核与软件包，SDK 打包项目自编软件。cattools 使用 Rust 的 musl 目标构建。发布镜像在刷入前必须校验 SHA-256。
+正式构建在 GitHub Actions 中使用 ImmortalWrt 25.12 ImageBuilder 和 SDK：ImageBuilder 组装官方内核与软件包，SDK 打包项目自编软件。cattools 使用 Rust 的 musl 目标构建，UAmask 使用 Go 构建。发布镜像在刷入前必须校验 SHA-256。
+
+自编软件包通过独立软件源发布，收录包与发布流程见[自有软件源](docs/packages.md)。
 
 发布参数与预装清单位于 `config/`。在 Git Bash 或 Linux 中运行 `bash scripts/verify.sh`，即可执行与 CI 共用的检查入口。本机缺少检查工具时，入口会构建验证用 Docker 镜像；需要 Git 和 Docker。Rust 检查在引入 cattools 后自动启用。
 
