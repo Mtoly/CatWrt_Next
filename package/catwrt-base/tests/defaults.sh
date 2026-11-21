@@ -176,28 +176,55 @@ EOF
 done
 printf 'PASS: empty and alternate stock settings receive defaults\n'
 
-# Password cleanup precedes the init guard and must not match a hash prefix.
-legacy_hash="\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF."
-for hash in "$legacy_hash" "$legacy_hash-extra" '*'; do
-	cat >"$TEST_ROOT/state" <<'EOF'
-system.@system[0].hostname=ImmortalWrt
-network.lan.ipaddr=192.168.1.1/24
+# Our own default settings must not be mistaken for retained foreign settings.
+cat >"$TEST_ROOT/state" <<'EOF'
+system.@system[0].hostname=CatWrt
+network.lan.ipaddr=192.168.1.4/24
 system.@imm_init[0].catwrt_init=1
 EOF
-	printf 'root:%s:12345:0:99999:7:::\n' "$hash" >"$TEST_ROOT/shadow"
-	cp "$TEST_ROOT/state" "$TEST_ROOT/expected.state"
-	cp "$TEST_ROOT/shadow" "$TEST_ROOT/expected.shadow"
-	cp "$TEST_ROOT/services.log" "$TEST_ROOT/expected.services"
-	rm -f "$TEST_ROOT/catwrt_migrated"
-	sh "$TEST_ROOT/defaults"
-	cmp "$TEST_ROOT/state" "$TEST_ROOT/expected.state"
-	cmp "$TEST_ROOT/services.log" "$TEST_ROOT/expected.services"
-	if [ "$hash" = "$legacy_hash" ]; then
-		assert_line 'root::0:0:99999:7:::' "$TEST_ROOT/shadow"
-		assert_line 'source=foreign' "$TEST_ROOT/catwrt_migrated"
-	else
-		cmp "$TEST_ROOT/shadow" "$TEST_ROOT/expected.shadow"
-		[ ! -e "$TEST_ROOT/catwrt_migrated" ]
-	fi
+printf '%s\n' "root:\$6\$fixture\$fixture:12345:0:99999:7:::" >"$TEST_ROOT/shadow"
+cp "$TEST_ROOT/state" "$TEST_ROOT/expected.state"
+cp "$TEST_ROOT/shadow" "$TEST_ROOT/expected.shadow"
+cp "$TEST_ROOT/services.log" "$TEST_ROOT/expected.services"
+rm -f "$TEST_ROOT/catwrt_migrated"
+sh -x "$TEST_ROOT/defaults" 2>"$TEST_ROOT/defaults.trace"
+cmp "$TEST_ROOT/state" "$TEST_ROOT/expected.state"
+cmp "$TEST_ROOT/shadow" "$TEST_ROOT/expected.shadow"
+cmp "$TEST_ROOT/services.log" "$TEST_ROOT/expected.services"
+assert_absent "$TEST_ROOT/shadow" "$TEST_ROOT/defaults.trace"
+[ ! -e "$TEST_ROOT/catwrt_migrated" ]
+printf 'PASS: own defaults survive sysupgrade without a migration marker\n'
+
+# Only uninitialized settings permit exact legacy password cleanup.
+legacy_hash="\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF."
+for initialized in no yes; do
+	for hash in "$legacy_hash" "$legacy_hash-extra" '*'; do
+		cat >"$TEST_ROOT/state" <<'EOF'
+system.@system[0].hostname=ImmortalWrt
+network.lan.ipaddr=192.168.1.1/24
+EOF
+		if [ "$initialized" = yes ]; then
+			printf 'system.@imm_init[0].catwrt_init=1\n' >>"$TEST_ROOT/state"
+		fi
+		printf 'root:%s:12345:0:99999:7:::\n' "$hash" >"$TEST_ROOT/shadow"
+		cp "$TEST_ROOT/state" "$TEST_ROOT/expected.state"
+		cp "$TEST_ROOT/shadow" "$TEST_ROOT/expected.shadow"
+		cp "$TEST_ROOT/services.log" "$TEST_ROOT/expected.services"
+		rm -f "$TEST_ROOT/catwrt_migrated"
+		sh -x "$TEST_ROOT/defaults" 2>"$TEST_ROOT/defaults.trace"
+		if [ "$initialized" = yes ]; then
+			cmp "$TEST_ROOT/state" "$TEST_ROOT/expected.state"
+			cmp "$TEST_ROOT/services.log" "$TEST_ROOT/expected.services"
+			cmp "$TEST_ROOT/shadow" "$TEST_ROOT/expected.shadow"
+			assert_absent "$TEST_ROOT/shadow" "$TEST_ROOT/defaults.trace"
+			[ ! -e "$TEST_ROOT/catwrt_migrated" ]
+		elif [ "$hash" = "$legacy_hash" ]; then
+			assert_line 'root::0:0:99999:7:::' "$TEST_ROOT/shadow"
+			assert_line 'source=foreign' "$TEST_ROOT/catwrt_migrated"
+		else
+			cmp "$TEST_ROOT/shadow" "$TEST_ROOT/expected.shadow"
+			[ ! -e "$TEST_ROOT/catwrt_migrated" ]
+		fi
+	done
 done
-printf 'PASS: exact password cleanup runs before the init guard\n'
+printf 'PASS: exact password cleanup runs only for uninitialized settings\n'
