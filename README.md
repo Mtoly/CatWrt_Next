@@ -11,6 +11,11 @@ CatWrt Next 以 ImmortalWrt 25.12.2 为底座，延续 CatWrt 的默认配置、
 - 首次启动时 root 没有密码，LuCI 会提示设置密码；请在首次登录后完成设置。
 - 软件包管理器为 apk-tools v3，防火墙使用 fw4 / nftables。
 
+## 从原版 CatWrt 迁移
+
+从原版 CatWrt 迁移前，请先阅读[迁移文档](docs/migration.md)。
+文档说明版本要求、备份与迁移步骤、迁移后检查清单，以及不兼容项和回滚方法。
+
 ## 构建与验证
 
 正式构建在 GitHub Actions 中使用 ImmortalWrt 25.12 ImageBuilder 和 SDK：ImageBuilder 组装官方内核与软件包，SDK 打包项目自编软件。cattools 使用 Rust 的 musl 目标构建。发布镜像在刷入前必须校验 SHA-256。
