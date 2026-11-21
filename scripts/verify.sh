@@ -23,6 +23,9 @@ printf '== Host checks ==\n'
 git diff --check "$base..HEAD" || failed=1
 bash scripts/privacy-scan.sh || failed=1
 bash scripts/privacy-scan.sh --self-test || failed=1
+if [[ -f package/catwrt-base/tests/defaults.sh ]]; then
+	sh package/catwrt-base/tests/defaults.sh || failed=1
+fi
 
 tools=(shellcheck shfmt prettier actionlint gitleaks)
 if [[ -f package/cattools/Cargo.toml ]]; then
