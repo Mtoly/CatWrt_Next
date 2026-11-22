@@ -87,8 +87,22 @@ select_export_packages() {
 	printf '%s\n' "${selected[@]}"
 }
 
+# luci-app-campus-auth is proprietary and built outside this repository. Only a
+# checksum-pinned copy is fetched here; reuse the cache so reruns stay offline.
+fetch_external_apk() {
+	local name=$1 url=$2 sha256=$3 cache=$4 staged
+	[[ $name =~ ^luci-app-campus-auth-[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+\.apk$ ]] ||
+		fail "fetch_external_apk: unexpected APK name: $name"
+	staged="$cache/$name"
+	if [[ ! -f $staged ]]; then
+		download "$url" "$staged"
+	fi
+	verify_sha256 "$staged" "$sha256"
+	printf '%s\n' "$staged"
+}
+
 self_test() {
-	local fixture selected output artifact name checks=0 transport_status=0 response
+	local fixture selected output artifact name checks=0 transport_status=0 response external_sha
 	local -a own_apks=(cattools-1.0.1-r1.apk catwrt-base-1-r1.apk UAmask-0.4.3-r1.apk
 		luci-app-poweroff-1-r1.apk luci-i18n-poweroff-zh-cn-0.261116.52078.apk)
 	fixture=$(mktemp -d)
@@ -137,6 +151,26 @@ self_test() {
 	[[ $output == *'curl=28; HTTP=000; type=; final=https://example.invalid/sdk'* ]]
 	checks=$((checks + 1))
 	unset -f curl
+	printf 'external\n' >"$fixture/luci-app-campus-auth-0.7.0-r1.apk"
+	external_sha=$(sha256sum "$fixture/luci-app-campus-auth-0.7.0-r1.apk")
+	external_sha=${external_sha%% *}
+	selected=$(fetch_external_apk luci-app-campus-auth-0.7.0-r1.apk https://example.invalid/pkg.apk \
+		"$external_sha" "$fixture")
+	[[ $selected == "$fixture/luci-app-campus-auth-0.7.0-r1.apk" ]] ||
+		fail 'self-test: cached external APK not reused'
+	checks=$((checks + 1))
+	if output=$(fetch_external_apk luci-app-campus-auth-0.7.0-r1.apk https://example.invalid/pkg.apk \
+		invalid "$fixture" 2>&1); then
+		fail 'self-test: external APK checksum mismatch accepted'
+	fi
+	[[ $output == *'expected invalid; actual '* ]]
+	checks=$((checks + 1))
+	if output=$(fetch_external_apk luci-app-campus-auth-0.7.0.apk https://example.invalid/pkg.apk \
+		"$external_sha" "$fixture" 2>&1); then
+		fail 'self-test: unexpected external APK name accepted'
+	fi
+	[[ $output == *'unexpected APK name'* ]]
+	checks=$((checks + 1))
 	mkdir "$fixture/packages"
 	for artifact in "${own_apks[@]}" cattools-extra-1.apk cattools-foo.apk \
 		luci-base-1.apk ucode-1.apk luci-app-poweroff-ng-1.apk uamask-0.4.3-r1.apk \
@@ -218,6 +252,16 @@ source config/uamask.env
 # shellcheck disable=SC2153
 [[ $UAMASK_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Invalid UAMASK_VERSION'
 [[ $UAMASK_TARBALL_SHA256 =~ ^[0-9a-f]{64}$ ]] || fail 'Invalid UAMASK_TARBALL_SHA256'
+# Pinned proprietary APK; see config/campus-auth.env.
+# shellcheck disable=SC1091
+source config/campus-auth.env
+# CAMPUS_AUTH_* come from config/campus-auth.env, which ShellCheck cannot follow.
+# shellcheck disable=SC2153
+[[ $CAMPUS_AUTH_APK_FILE =~ ^luci-app-campus-auth-[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+\.apk$ ]] || fail 'Invalid CAMPUS_AUTH_APK_FILE'
+# shellcheck disable=SC2153
+[[ $CAMPUS_AUTH_APK_URL =~ ^https://[^[:space:]]+$ ]] || fail 'Invalid CAMPUS_AUTH_APK_URL'
+# shellcheck disable=SC2153
+[[ $CAMPUS_AUTH_APK_SHA256 =~ ^[0-9a-f]{64}$ ]] || fail 'Invalid CAMPUS_AUTH_APK_SHA256'
 [[ $IMMORTALWRT_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Invalid IMMORTALWRT_VERSION'
 # TARGET and SUBTARGET come from release.env, which ShellCheck cannot follow.
 # shellcheck disable=SC2153
@@ -409,6 +453,8 @@ find "$out_dir" -maxdepth 1 -type f \( -name '*.apk' -o -name packages.adb \) -d
 for artifact in "${artifacts[@]}"; do
 	cp -- "$artifact" "$out_dir/" || fail "cp: failed to export $artifact to $out_dir"
 done
+external_apk=$(fetch_external_apk "$CAMPUS_AUTH_APK_FILE" "$CAMPUS_AUTH_APK_URL" "$CAMPUS_AUTH_APK_SHA256" "$dl")
+cp -- "$external_apk" "$out_dir/" || fail "cp: failed to export $external_apk to $out_dir"
 cp -- "$sdk/public-key.pem" "$out_dir/signing-public-key.pem"
 chmod 644 "$out_dir/signing-public-key.pem"
 # Like the SDK package/index target: the APKs were just signed by this SDK key, so
@@ -423,6 +469,7 @@ printf '\n已导出的软件包名称：\n'
 for artifact in "${artifacts[@]}"; do
 	printf '  %s\n' "$(own_package_name "$artifact")"
 done
+printf '  %s（外部已构建，经 SHA256 校验）\n' "$CAMPUS_AUTH_APK_FILE"
 printf '\n构建完成（软件包文件名包含版本）：\n'
 for artifact in "$out_dir"/*.apk "$out_dir/packages.adb" "$out_dir/signing-public-key.pem"; do
 	printf '  %s  %s 字节\n' "$(basename -- "$artifact")" "$(stat -c %s "$artifact")"

@@ -3,4 +3,5 @@
 package/catwrt-base/files/etc/apk/keys/*.pem:^[A-Za-z0-9+/=]+$  # apk signing public key, public by design
 config/mosdns.env:^MOSDNS_TARBALL_SHA256="[0-9a-f]*"$  # pinned sbwml MosDNS tarball checksum (public, not a secret)
 config/uamask.env:^UAMASK_TARBALL_SHA256="[0-9a-f]*"$  # pinned upstream UAmask tarball checksum (public, not a secret)
+config/campus-auth.env:^CAMPUS_AUTH_APK_SHA256="[0-9a-f]*"[[:space:]]+[#] gitleaks:allow  # pinned campus-auth APK checksum (public, not a secret)
 docker/build.Dockerfile:^ARG GO_SHA256=[0-9a-f]*$  # pinned official Go tarball checksum (public, not a secret)
