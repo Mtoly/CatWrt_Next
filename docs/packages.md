@@ -11,6 +11,7 @@ CatWrt Next 固件默认只启用 ImmortalWrt 官方源。项目自编的软件�
 | `luci-app-poweroff`        | LuCI 关机按钮                                                                                          |
 | `luci-i18n-poweroff-zh-cn` | 关机按钮的中文翻译                                                                                     |
 | `UAmask`                   | [UA-Mask](https://github.com/Zesuy/UA-Mask) 0.4.3，基于 nftables 的 HTTP User-Agent 透明改写，默认停用 |
+| `luci-app-campus-auth`     | 校园网认证的 LuCI 应用 0.7.0，专有软件（`LicenseRef-Proprietary`），安装后默认停用                     |
 
 ## 用户安装
 
@@ -35,7 +36,7 @@ UAmask 是 GPL-3.0-only 软件，与本项目自身的 GPL-2.0-only 代码分开
 
    未设置时会用临时密钥构建并给出警告，产物不能用于正式发布。脚本会校验导出的公钥与 `package/catwrt-base/files/etc/apk/keys/catwrt-next.pem` 一致。
 
-2. 构建产物在 `out/packages/`：每个包一个 `.apk`、签名索引 `packages.adb` 和公钥。当前固定导出 5 个 APK，数量或包名不符时脚本直接失败。
+2. 构建产物在 `out/packages/`：每个包一个 `.apk`、签名索引 `packages.adb` 和公钥。当前固定导出 6 个 APK，数量或包名不符时脚本直接失败。
 
 3. 发布到软件源：
 
@@ -43,7 +44,7 @@ UAmask 是 GPL-3.0-only 软件，与本项目自身的 GPL-2.0-only 代码分开
    gh workflow run repo-publish.yml -f tag=v26.12.4
    ```
 
-   工作流会重新核对 APK 数量（5 个）和公钥，然后把产物写入 `gh-pages` 的 `repo/<tag>/x86_64/`。固件里的软件源地址与发布标签一一对应，新版本发布后旧标签仍然可用。
+   工作流会重新核对 APK 数量（6 个）和公钥，然后把产物写入 `gh-pages` 的 `repo/<tag>/x86_64/`。固件里的软件源地址与发布标签一一对应，新版本发布后旧标签仍然可用。
 
 ## 注意
 
