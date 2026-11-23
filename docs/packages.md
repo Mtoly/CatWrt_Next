@@ -11,7 +11,7 @@ CatWrt Next 固件默认只启用 ImmortalWrt 官方源。项目自编的软件�
 | `luci-app-poweroff`        | LuCI 关机按钮                                                                                          |
 | `luci-i18n-poweroff-zh-cn` | 关机按钮的中文翻译                                                                                     |
 | `UAmask`                   | [UA-Mask](https://github.com/Zesuy/UA-Mask) 0.4.3，基于 nftables 的 HTTP User-Agent 透明改写，默认停用 |
-| `luci-app-campus-auth`     | 校园网认证的 LuCI 应用 0.7.0，专有软件（`LicenseRef-Proprietary`），安装后默认停用                     |
+| `luci-app-campus-auth`     | 校园网认证的 LuCI 应用 0.8.0-r2，专有软件（`LicenseRef-Proprietary`），安装后默认停用                  |
 
 ## 用户安装
 
