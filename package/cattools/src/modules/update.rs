@@ -244,6 +244,69 @@ fn preserve_package_backup() -> Result<()> {
     Ok(())
 }
 
+fn backup_version(version: &str) -> String {
+    let sanitized: String = version
+        .chars()
+        .filter(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
+        .collect();
+    if sanitized.is_empty() {
+        "current".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn backup_path(version: &str) -> String {
+    format!("/tmp/catwrt-backup-{}.tar.gz", backup_version(version))
+}
+
+fn verify_config_backup(path: &str) -> Result<u64> {
+    let metadata = fs::metadata(path).map_err(|error| {
+        CatoolsError::ValidationError(format!(
+            "升级前配置备份校验失败：{} 不存在或无法读取（{}）；已中止升级，未刷入镜像",
+            path, error
+        ))
+    })?;
+    if !metadata.is_file() {
+        return Err(CatoolsError::ValidationError(format!(
+            "升级前配置备份校验失败：{} 不是普通文件；已中止升级，未刷入镜像",
+            path
+        )));
+    }
+    if metadata.len() == 0 {
+        return Err(CatoolsError::ValidationError(format!(
+            "升级前配置备份校验失败：{} 为 0 字节；已中止升级，未刷入镜像",
+            path
+        )));
+    }
+    Ok(metadata.len())
+}
+
+fn create_config_snapshot(path: &str, export: impl FnOnce(&str) -> Result<String>) -> Result<u64> {
+    export(path).map_err(|error| {
+        CatoolsError::CommandError(format!(
+            "升级前配置备份失败：{}；已中止升级，未刷入镜像",
+            error
+        ))
+    })?;
+    verify_config_backup(path)
+}
+
+fn export_config_backup(version: &str) -> Result<()> {
+    let backup_path = backup_path(version);
+    let size = create_config_snapshot(&backup_path, |path| {
+        run_command("sysupgrade", &["-b", path])
+    })?;
+    println!("升级前配置备份已保存：{}（{} 字节）", backup_path, size);
+    println!("该备份仅包含当前配置，不包含固件镜像本身。");
+    println!(
+        "/tmp 会在设备重启后清空，请先通过 scp 或其他方式将该备份复制到设备之外，再确认刷入。"
+    );
+    Ok(())
+}
+
 fn sysupgrade_started(success: bool, stderr: &str) -> bool {
     success || stderr.contains("Commencing upgrade")
 }
@@ -266,6 +329,7 @@ fn upgrade(release: &Release, meta: &UpdateMeta) -> Result<()> {
     verify_download(IMAGE_FILE, &image.sha256)?;
     println!("镜像 sha256 校验通过");
     preserve_package_backup()?;
+    export_config_backup(&release.version)?;
 
     println!("升级将重启设备，请先保存重要数据，升级过程中请勿断电。");
     if !Confirm::new()
@@ -456,5 +520,90 @@ mod tests {
         }
         let present = format!(" {} # package backup\n/etc/config/\n", BACKUP_FILE);
         assert_eq!(include_backup(&present), present);
+    }
+
+    #[test]
+    fn backup_path_keeps_only_safe_version_characters() {
+        assert_eq!(backup_path("v26.12"), "/tmp/catwrt-backup-v26.12.tar.gz");
+        assert_eq!(
+            backup_path("v26.12/rc1 beta"),
+            "/tmp/catwrt-backup-v26.12rc1beta.tar.gz"
+        );
+        assert_eq!(backup_path(".."), "/tmp/catwrt-backup-...tar.gz");
+        assert_eq!(backup_path(""), "/tmp/catwrt-backup-current.tar.gz");
+        assert_eq!(backup_path(" \t/"), "/tmp/catwrt-backup-current.tar.gz");
+    }
+
+    fn test_backup_path(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "cattools-backup-test-{}-{}",
+            std::process::id(),
+            name
+        ))
+    }
+
+    #[test]
+    fn config_backup_must_be_a_nonempty_regular_file() {
+        let missing = test_backup_path("missing");
+        let _ = fs::remove_file(&missing);
+        assert!(verify_config_backup(missing.to_str().unwrap()).is_err());
+
+        let empty = test_backup_path("empty");
+        fs::write(&empty, b"").unwrap();
+        let error = verify_config_backup(empty.to_str().unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("0 字节"));
+        fs::remove_file(&empty).unwrap();
+
+        let directory = test_backup_path("directory");
+        fs::create_dir(&directory).unwrap();
+        let error = verify_config_backup(directory.to_str().unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("不是普通文件"));
+        fs::remove_dir(&directory).unwrap();
+
+        let valid = test_backup_path("valid");
+        fs::write(&valid, b"config").unwrap();
+        assert_eq!(verify_config_backup(valid.to_str().unwrap()).unwrap(), 6);
+        fs::remove_file(&valid).unwrap();
+    }
+
+    #[test]
+    fn config_export_failure_aborts_upgrade() {
+        let path = test_backup_path("command-failure");
+        let error = create_config_snapshot(&path.to_string_lossy(), |_| {
+            Err(CatoolsError::CommandError(
+                "sysupgrade -b 退出状态 1；stderr：read-only file system".to_string(),
+            ))
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("read-only file system"));
+        assert!(error.contains("已中止升级"));
+    }
+
+    #[test]
+    fn config_export_without_output_aborts_upgrade() {
+        let path = test_backup_path("no-output");
+        let _ = fs::remove_file(&path);
+        let error = create_config_snapshot(&path.to_string_lossy(), |_| Ok(String::new()))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("不存在或无法读取"));
+        assert!(error.contains("未刷入镜像"));
+    }
+
+    #[test]
+    fn config_export_returns_backup_size() {
+        let path = test_backup_path("exported");
+        let size = create_config_snapshot(&path.to_string_lossy(), |path| {
+            fs::write(path, b"snapshot")?;
+            Ok(String::new())
+        })
+        .unwrap();
+        assert_eq!(size, 8);
+        fs::remove_file(&path).unwrap();
     }
 }
