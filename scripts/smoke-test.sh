@@ -366,6 +366,74 @@ def check_luci_http(run, console, url, expected_ip, http_timeout, command_timeou
             print(f'[{run.variant}] INFO {command}：{diagnostic(detail)}', flush=True)
 
 
+def wan_response(port, timeout):
+    url = f'http://127.0.0.1:{port}/cgi-bin/luci/'
+    with tempfile.TemporaryDirectory(prefix='catwrt-wan-') as work:
+        body = Path(work) / 'body'
+        result = subprocess.run(
+            ['curl', '--silent', '--show-error', '--noproxy', '*',
+             '--connect-timeout', str(min(3, timeout)), '--max-time', str(timeout),
+             '--output', str(body), '--write-out', '%{http_code}|%{content_type}', url],
+            capture_output=True, timeout=timeout + 2, check=False)
+        metadata = result.stdout.decode('utf-8', errors='replace').split('|', 1)
+        status, content_type = (metadata + [''] * 2)[:2]
+        data = body.read_bytes() if body.exists() else b''
+        success = result.returncode != 0 and status == '000'
+        detail = (f'curl={result.returncode}；HTTP={status}；类型={content_type}；'
+                  f'正文片段={diagnostic(data[:200].decode("utf-8", errors="replace"))}；'
+                  f'诊断={diagnostic(result.stderr.decode("utf-8", errors="replace"))}')
+        return success, detail
+
+
+def wait_wan_ipv4(console, deadline, command_timeout):
+    detail = 'eth1 尚未就绪'
+    while time.monotonic() < deadline:
+        try:
+            output, status = console.command('ip -4 addr show eth1',
+                                             min(deadline, time.monotonic() + command_timeout))
+        except SmokeError as exc:
+            detail = f'eth1 地址查询失败：{exc}'
+        else:
+            if status == 0 and re.search(r'\binet\s+', output):
+                return
+            detail = f'eth1 无 IPv4 地址：{output}（退出码 {status}）'
+        console.pump(min(1, max(0, deadline - time.monotonic())))
+    raise SmokeTimeout(f'WAN 地址：预期 eth1 获得 IPv4 地址；实际={detail}')
+
+
+def check_wan_management_unreachable(run, console, port, timeout, command_timeout):
+    url = f'http://127.0.0.1:{port}/cgi-bin/luci/'
+    expected = 'curl 退出码非 0 且 HTTP=000'
+    try:
+        wait_wan_ipv4(console, time.monotonic() + timeout, command_timeout)
+    except SmokeError as exc:
+        run.check('WAN 管理面不可达', expected, f'{exc}；URL={url}', False,
+                  f'ip -4 addr show eth1；curl {url}')
+        return
+    try:
+        success, detail = wan_response(port, min(5, timeout))
+    except (OSError, subprocess.SubprocessError) as exc:
+        success, detail = False, f'HTTP 请求失败：{exc}；URL={url}'
+    run.check('WAN 管理面不可达', expected, detail, success, f'curl {url}')
+
+
+def wan_zone_policy(output):
+    sections = {}
+    for line in output.splitlines():
+        match = re.fullmatch(r"firewall\.(@[^.]+|[^.]+)\.(name|input|forward)='(.*)'", line)
+        if match:
+            sections.setdefault(match[1], {})[match[2]] = match[3]
+    for section in sections.values():
+        if section.get('name') == 'wan' and 'input' in section and 'forward' in section:
+            return (section.get('input') in ('REJECT', 'DROP') and
+                    section.get('forward') in ('REJECT', 'DROP'))
+    return False
+
+
+def vlmcsd_not_listening(output):
+    return re.search(r':1688(?=\s|$)', output) is None
+
+
 def run_variant(run, images, version, log_dir, boot_timeout, expected_ip, http_timeout):
     console = None
     shell_open = False
@@ -376,17 +444,20 @@ def run_variant(run, images, version, log_dir, boot_timeout, expected_ip, http_t
         try:
             image = verified_image(images, version, run.variant)
             run.check('镜像 SHA256', '匹配 sha256sums', image.name, True)
-            # A free loopback port avoids collisions with other local services.
-            with socket.socket() as listener:
-                listener.bind(('127.0.0.1', 0))
-                port = listener.getsockname()[1]
+            # Free loopback ports avoid collisions with other local services.
+            with socket.socket() as lan_listener, socket.socket() as wan_listener:
+                lan_listener.bind(('127.0.0.1', 0))
+                wan_listener.bind(('127.0.0.1', 0))
+                port = lan_listener.getsockname()[1]
+                wan_port = wan_listener.getsockname()[1]
             args = ['qemu-system-x86_64', '-accel', run.accelerator, '-m', '512', '-smp', '1',
                     '-snapshot', '-nographic', '-monitor', 'none', '-serial', 'stdio',
                     '-drive', f'file={image},format=qcow2,if=virtio',
                     '-netdev', 'user,id=lan,net=192.168.1.0/24,host=192.168.1.1,restrict=on,'
                                f'hostfwd=tcp:127.0.0.1:{port}-192.168.1.4:80',
                     '-device', 'virtio-net-pci,netdev=lan',
-                    '-netdev', 'user,id=wan', '-device', 'virtio-net-pci,netdev=wan']
+                    '-netdev', f'user,id=wan,hostfwd=tcp:127.0.0.1:{wan_port}-:80',
+                    '-device', 'virtio-net-pci,netdev=wan']
             if run.variant.endswith('-efi'):
                 code, variables = probe_ovmf(Path('/usr/share/OVMF'))
                 writable_vars = Path(work) / 'vars.fd'
@@ -444,7 +515,8 @@ def run_variant(run, images, version, log_dir, boot_timeout, expected_ip, http_t
                             'kmod-atlantic', 'kmod-bnx2x', 'kmod-iavf', 'kmod-macsec', 'kmod-sfp',
                             'kmod-usb-net-cdc-ncm', 'kmod-usb-net-rndis',
                             'kmod-usb-net-ipheth', 'kmod-usb-net-aqc111',
-                            'jq', 'pciutils', 'pciids', 'usbutils', 'htop', 'nano', 'openssl-util'):
+                            'jq', 'pciutils', 'pciids', 'usbutils', 'htop', 'nano', 'openssl-util',
+                            'irqbalance'):
                 guest_check(f'已安装 {package}', f'apk info -e {package}', '已安装', lambda output: True)
             for package in ('luci-app-attendedsysupgrade', 'attendedsysupgrade-common', 'owut', 'luci-app-passwall'):
                 guest_check(f'未安装 {package}', f'apk info -e {package}; smoke_status=$?; '
@@ -465,9 +537,21 @@ def run_variant(run, images, version, log_dir, boot_timeout, expected_ip, http_t
                         'exit=1 且输出含“交互式终端”、不含 IoError',
                         lambda output: 'exit=1' in output and '交互式终端' in output and 'IoError' not in output)
             guest_check('默认拥塞控制', 'sysctl -n net.ipv4.tcp_congestion_control', 'bbr')
+            guest_check('irqbalance 已启用', "uci get 'irqbalance.irqbalance.enabled'", '1')
+            guest_check('RPS 流表大小', "uci get 'network.@globals[0].steering_flows'", '16384')
+            guest_check('连接跟踪上限', 'sysctl -n net.netfilter.nf_conntrack_max', '65536')
+            guest_check('Dropbear 仅绑定 LAN', "uci get 'dropbear.@dropbear[0].Interface'", 'lan')
+            guest_check('ttyd 仅绑定 LAN', "uci get 'ttyd.@ttyd[0].interface'", '@lan')
+            guest_check('vlmcsd 默认停用', 'uci get vlmcsd.config.enabled', '0')
+            guest_check('UPnP 默认停用', 'uci get upnpd.config.enabled', '0')
+            guest_check('vlmcsd 未监听 1688', 'netstat -ltn', '不含 :1688 监听',
+                        vlmcsd_not_listening)
+            guest_check('WAN 防火墙策略', 'uci show firewall',
+                        'wan 区域 input 与 forward 均为 REJECT/DROP', wan_zone_policy)
 
             url = f'http://127.0.0.1:{port}/cgi-bin/luci/'
             check_luci_http(run, console, url, expected_ip, http_timeout, command_timeout)
+            check_wan_management_unreachable(run, console, wan_port, http_timeout, command_timeout)
         except (SmokeError, OSError, subprocess.SubprocessError) as exc:
             run.check('变体执行', '全部检查完成', str(exc), False)
         finally:
@@ -647,8 +731,65 @@ class SelfTest(unittest.TestCase):
                 self.assertIn('text/html', detail)
                 self.assertIn('fixture diagnostic', detail)
 
+    def test_wan_management_requires_no_http_response(self):
+        url = 'http://127.0.0.1:8080/cgi-bin/luci/'
+
+        def curl(args, **kwargs):
+            self.assertEqual(args[-1], url)
+            Path(args[args.index('--output') + 1]).write_bytes(b'luci fixture')
+            return subprocess.CompletedProcess(args, curl_status,
+                                               f'{status}|text/html'.encode(), b'fixture diagnostic')
+
+        for status, curl_status, expected in (
+            ('000', 7, True),
+            ('000', 28, True),
+            ('200', 0, False),
+            ('403', 0, False),
+            ('200', 7, False),
+        ):
+            with self.subTest(status=status, curl=curl_status), mock.patch.object(subprocess, 'run', side_effect=curl):
+                success, detail = wan_response(8080, 1)
+                self.assertEqual(success, expected)
+                self.assertIn(f'HTTP={status}', detail)
+                self.assertIn('fixture diagnostic', detail)
+
+    def test_wan_zone_policy(self):
+        for output, expected in (
+            ("firewall.@zone[1].name='wan'\n"
+             "firewall.@zone[1].input='REJECT'\n"
+             "firewall.@zone[1].forward='DROP'", True),
+            ("firewall.wan.name='wan'\n"
+             "firewall.wan.input='DROP'\n"
+             "firewall.wan.forward='REJECT'", True),
+            ("firewall.@zone[1].name='wan'\n"
+             "firewall.@zone[1].input='ACCEPT'\n"
+             "firewall.@zone[1].forward='REJECT'", False),
+            ("firewall.@zone[1].name='wan'\n"
+             "firewall.@zone[1].input='REJECT'", False),
+            ("firewall.@zone[0].name='lan'\n"
+             "firewall.@zone[0].input='ACCEPT'", False),
+            ("firewall.rule0.name='wan'\n"
+             "firewall.@zone[1].name='wan'\n"
+             "firewall.@zone[1].input='REJECT'\n"
+             "firewall.@zone[1].forward='REJECT'", True),
+        ):
+            with self.subTest(output=output):
+                self.assertEqual(wan_zone_policy(output), expected)
+
+    def test_vlmcsd_port_boundary(self):
+        for output, expected in (
+            ('tcp 0 0 0.0.0.0:80 0.0.0.0:* LISTEN', True),
+            ('tcp 0 0 0.0.0.0:1688 0.0.0.0:* LISTEN', False),
+            ('tcp 0 0 0.0.0.0:16880 0.0.0.0:* LISTEN', True),
+            ('tcp6 0 0 :::1688 :::* LISTEN', False),
+            ('tcp 0 0 0.0.0.0:1688', False),
+        ):
+            with self.subTest(output=output):
+                self.assertEqual(vlmcsd_not_listening(output), expected)
+
     def test_check_failures_shutdown_and_interrupt(self):
         for scenario in ('success', 'success-kvm', 'wrong-lan', 'bare-lan', 'wrong-prefix', 'wrong-bbr',
+                         'wrong-irqbalance', 'wan-reachable',
                          'command-timeout', 'boot-failure', 'shutdown-timeout', 'interrupt'):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory(prefix='catwrt-fixture-') as work:
                 root = Path(work)
@@ -686,6 +827,22 @@ class SelfTest(unittest.TestCase):
                         'cattools </dev/null 2>&1; echo "exit=$?"': '错误: cattools 需要交互式终端运行，请通过 SSH 或串口终端使用\nexit=1',
                         'sysctl -n net.ipv4.tcp_congestion_control': 'cubic' if scenario == 'wrong-bbr' else 'bbr',
                         'ip -4 addr show br-lan': 'inet 192.168.1.1/24' if scenario == 'wrong-lan' else 'inet 192.168.1.4/24',
+                        "uci get 'irqbalance.irqbalance.enabled'": '0' if scenario == 'wrong-irqbalance' else '1',
+                        "uci get 'network.@globals[0].steering_flows'": '16384',
+                        'sysctl -n net.netfilter.nf_conntrack_max': '65536',
+                        "uci get 'dropbear.@dropbear[0].Interface'": 'lan',
+                        "uci get 'ttyd.@ttyd[0].interface'": '@lan',
+                        'uci get vlmcsd.config.enabled': '0',
+                        'uci get upnpd.config.enabled': '0',
+                        'netstat -ltn': 'tcp 0 0 0.0.0.0:22 0.0.0.0:* LISTEN\n'
+                                        'tcp 0 0 0.0.0.0:80 0.0.0.0:* LISTEN',
+                        'uci show firewall': "firewall.@zone[0].name='lan'\n"
+                                             "firewall.@zone[0].input='ACCEPT'\n"
+                                             "firewall.@zone[0].forward='ACCEPT'\n"
+                                             "firewall.@zone[1].name='wan'\n"
+                                             "firewall.@zone[1].input='REJECT'\n"
+                                             "firewall.@zone[1].forward='REJECT'\n",
+                        'ip -4 addr show eth1': 'inet 192.0.2.15/24 scope global eth1',
                     }
                     if text in values:
                         return values[text], 0
@@ -697,9 +854,13 @@ class SelfTest(unittest.TestCase):
 
                 serial.command.side_effect = command
                 output = io.StringIO()
+                wan_http = mock.Mock(return_value=(True, 'curl=7；HTTP=000；类型=；fixture refused'))
+                if scenario == 'wan-reachable':
+                    wan_http = mock.Mock(return_value=(False, 'curl=0；HTTP=200；类型=text/html；正文片段=luci'))
                 with mock.patch.dict(globals(), SerialConsole=mock.Mock(return_value=serial),
                                      verified_image=mock.Mock(return_value=root / 'fixture.qcow2'),
-                                     luci_response=mock.Mock(return_value=(True, 'HTTP=200；luci'))), \
+                                     luci_response=mock.Mock(return_value=(True, 'HTTP=200；luci')),
+                                     wan_response=wan_http), \
                         contextlib.redirect_stdout(output):
                     if scenario == 'interrupt':
                         with self.assertRaises(KeyboardInterrupt):
@@ -728,6 +889,11 @@ class SelfTest(unittest.TestCase):
                     self.assertIn('FAIL LAN 地址：预期=192.168.1.4/24；实际=192.168.1.4/32', output.getvalue())
                 if scenario == 'wrong-bbr':
                     self.assertIn('FAIL 默认拥塞控制：预期=bbr；实际=cubic', output.getvalue())
+                if scenario == 'wrong-irqbalance':
+                    self.assertIn('FAIL irqbalance 已启用：预期=1；实际=0', output.getvalue())
+                if scenario == 'wan-reachable':
+                    self.assertIn('FAIL WAN 管理面不可达', output.getvalue())
+                    self.assertIn('HTTP=200', output.getvalue())
 
     def test_luci_http_waits_for_network_and_retries(self):
         clock = [500.0]
