@@ -37,6 +37,18 @@ fi
 
 [ "$catwrt_init" = '1' ] && exit 0
 
+if uci -q get irqbalance.irqbalance >/dev/null; then
+	uci set 'irqbalance.irqbalance.enabled=1'
+fi
+
+if uci -q get 'network.@globals[0]' >/dev/null && [ -z "$(uci -q get 'network.@globals[0].steering_flows')" ]; then
+	uci set 'network.@globals[0].steering_flows=16384'
+fi
+
+if uci -q get vlmcsd.config >/dev/null; then
+	uci set 'vlmcsd.config.enabled=0'
+fi
+
 case "$hostname" in
 '' | ImmortalWrt | OpenWrt) uci set 'system.@system[0].hostname=CatWrt' ;;
 esac

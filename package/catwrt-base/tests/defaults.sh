@@ -66,6 +66,7 @@ assert_line 'system.@imm_init[0].catwrt_init=1' "$TEST_ROOT/state"
 assert_line 'commit' "$TEST_ROOT/uci.log"
 assert_absent 'enabled=' "$TEST_ROOT/state"
 assert_absent 'enable=' "$TEST_ROOT/state"
+assert_absent 'steering_flows=' "$TEST_ROOT/state"
 printf 'PASS: absent optional packages and theme\n'
 
 # With every optional package present, disable each service and its known flags.
@@ -75,6 +76,12 @@ openclash.config=openclash
 openclash.config.enable=1
 zerotier.@zerotier[0]=zerotier
 zerotier.@zerotier[0].enabled=1
+irqbalance.irqbalance=irqbalance
+irqbalance.irqbalance.enabled=0
+network.@globals[0]=globals
+network.@globals[0].packet_steering=1
+vlmcsd.config=config
+vlmcsd.config.enabled=1
 EOF
 # Remove the previous done flag before applying the second fixture.
 sed '/^system\.@imm_init\[0\]\.catwrt_init=1$/d' "$TEST_ROOT/state" >"$TEST_ROOT/state.next"
@@ -92,6 +99,10 @@ sh "$TEST_ROOT/defaults"
 assert_line 'luci.main.mediaurlbase=/luci-static/argon' "$TEST_ROOT/state"
 assert_line 'openclash.config.enable=0' "$TEST_ROOT/state"
 assert_line 'zerotier.@zerotier[0].enabled=0' "$TEST_ROOT/state"
+assert_line 'irqbalance.irqbalance.enabled=1' "$TEST_ROOT/state"
+assert_line 'network.@globals[0].packet_steering=1' "$TEST_ROOT/state"
+assert_line 'network.@globals[0].steering_flows=16384' "$TEST_ROOT/state"
+assert_line 'vlmcsd.config.enabled=0' "$TEST_ROOT/state"
 assert_line 'catwrt.repo.mirror=vsean' "$TEST_ROOT/state"
 assert_line 'catwrt.repo.custom=0' "$TEST_ROOT/state"
 for service in openclash tailscale zerotier appfilter mosdns adguardhome nfsd qemu-ga vmtoolsd; do
@@ -100,11 +111,30 @@ done
 [ "$(wc -l <"$TEST_ROOT/services.log")" -eq 9 ]
 printf 'PASS: optional service flags and init scripts\n'
 
+# A pre-existing steering_flows value must win over the default on first boot.
+cat >"$TEST_ROOT/state" <<'EOF'
+irqbalance.irqbalance=irqbalance
+irqbalance.irqbalance.enabled=0
+network.@globals[0]=globals
+network.@globals[0].steering_flows=32768
+vlmcsd.config=config
+vlmcsd.config.enabled=1
+EOF
+sh "$TEST_ROOT/defaults"
+assert_line 'irqbalance.irqbalance.enabled=1' "$TEST_ROOT/state"
+assert_line 'network.@globals[0].steering_flows=32768' "$TEST_ROOT/state"
+assert_line 'vlmcsd.config.enabled=0' "$TEST_ROOT/state"
+[ "$(grep -c '^network\.@globals\[0\]\.steering_flows=' "$TEST_ROOT/state")" -eq 1 ]
+printf 'PASS: custom steering_flows survives first boot\n'
+
 # A later run must preserve user changes and never repeat service actions.
 uci set 'network.lan.ipaddr=192.0.2.2/24'
 uci set 'system.@system[0].hostname=custom'
 uci set 'catwrt.repo.mirror=official'
 uci set 'luci.main.lang=en'
+uci set 'irqbalance.irqbalance.enabled=0'
+uci set 'network.@globals[0].steering_flows=32768'
+uci set 'vlmcsd.config.enabled=1'
 uci set 'system.@imm_init[0].catwrt_init=1'
 cp "$TEST_ROOT/state" "$TEST_ROOT/expected.state"
 cp "$TEST_ROOT/services.log" "$TEST_ROOT/expected.services"
@@ -112,6 +142,9 @@ cp "$TEST_ROOT/services.log" "$TEST_ROOT/expected.services"
 sh "$TEST_ROOT/defaults"
 cmp "$TEST_ROOT/state" "$TEST_ROOT/expected.state"
 cmp "$TEST_ROOT/services.log" "$TEST_ROOT/expected.services"
+assert_line 'irqbalance.irqbalance.enabled=0' "$TEST_ROOT/state"
+assert_line 'network.@globals[0].steering_flows=32768' "$TEST_ROOT/state"
+assert_line 'vlmcsd.config.enabled=1' "$TEST_ROOT/state"
 assert_line '-q get system.@imm_init[0].catwrt_init' "$TEST_ROOT/uci.log"
 [ "$(wc -l <"$TEST_ROOT/uci.log")" -eq 3 ]
 printf 'PASS: second run preserves user settings and has no writes\n'
