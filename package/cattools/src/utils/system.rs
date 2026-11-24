@@ -54,6 +54,22 @@ pub fn run_shell(command: &str) -> Result<String> {
 }
 
 pub fn restart_service(service: &str) -> Result<()> {
-    run_command("/etc/init.d", &[service, "restart"])?;
+    run_command(&format!("/etc/init.d/{service}"), &["restart"])?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::restart_service;
+
+    #[test]
+    fn restart_service_invokes_init_script_with_restart_arg() {
+        let err = restart_service("cattools-nonexistent-test-service")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("无法执行命令 /etc/init.d/cattools-nonexistent-test-service restart："),
+            "unexpected command in error: {err}"
+        );
+    }
 }
