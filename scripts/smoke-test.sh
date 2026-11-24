@@ -159,7 +159,7 @@ def console_text(raw):
     text = raw.decode('utf-8', errors='replace').replace('\r', '')
     text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text)
     # Kernel records can arrive between lines or in the middle of a value/marker.
-    return re.sub(r'(?:<\d+>)?\[\s*\d+(?:\.\d+)?\][^\n]*(?:\n|$)', '', text)
+    return re.sub(r'(?:<\d+>)?\[\s*\d+\.\d+\] [^\n]*(?:\n|$)', '', text)
 
 
 def marker_result(raw, number):
@@ -643,6 +643,27 @@ class SelfTest(unittest.TestCase):
         self.assertIsNone(marker_result(raw, 8))
         for length in range(len(raw)):
             self.assertIsNone(marker_result(raw[:length], 7))
+
+    def test_firewall_uci_indices_survive_kernel_stripping(self):
+        raw = (b"root@CatWrt:/# printf '\\n%s\\n' __S_4__; { uci show firewall; }; "
+               b"smoke_rc=$?; printf '\\n%s %s\\n' __E_4__ \"$smoke_rc\"\r\n"
+               b'__S_4__\r\n'
+               b"firewall.@defaults[0].syn_flood='1'\r\n"
+               b'[   12.001] kernel: fixture\r\n'
+               b"firewall.@defaults[0].input='REJECT'\r\n"
+               b"firewall.@zone[1].name='wan'\r\n"
+               b'<6>[    0.000000] kernel: fixture\r\n'
+               b"firewall.@zone[1].input='REJECT'\r\n"
+               b"firewall.@zone[1].forward='DROP'\r\n"
+               b'__E_4__ 0\r\n')
+        result = marker_result(raw, 4)
+        self.assertIsNotNone(result)
+        output, status = result
+        self.assertEqual(status, 0)
+        self.assertIn("firewall.@defaults[0].input='REJECT'", output)
+        self.assertIn("firewall.@zone[1].name='wan'", output)
+        self.assertNotIn('kernel: fixture', output)
+        self.assertTrue(wan_zone_policy(output))
 
     def test_marker_echo_empty_and_ansi(self):
         self.assertIsNone(marker_result(b"root# echo __S_1__; echo __E_1__ 0\n", 1))
