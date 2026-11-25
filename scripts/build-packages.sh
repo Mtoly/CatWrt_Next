@@ -434,8 +434,7 @@ if [[ -d $sdk/bin/packages ]]; then
 fi
 for package in "${packages[@]}"; do
 	# make targets address the SDK package directory, which is lowercase for UAmask
-	# (the APK/package name is UAmask). Reinstall payloads and sign with the current
-	# key on cached SDK runs too.
+	# (the APK/package name is UAmask). Reinstall payloads cleanly on cached SDK runs too.
 	dir=$package
 	[[ $package == UAmask ]] && dir=uamask
 	make "${make_args[@]}" "package/$dir/clean" V=s
@@ -457,8 +456,8 @@ external_apk=$(fetch_external_apk "$CAMPUS_AUTH_APK_FILE" "$CAMPUS_AUTH_APK_URL"
 cp -- "$external_apk" "$out_dir/" || fail "cp: failed to export $external_apk to $out_dir"
 cp -- "$sdk/public-key.pem" "$out_dir/signing-public-key.pem"
 chmod 644 "$out_dir/signing-public-key.pem"
-# Like the SDK package/index target: the APKs were just signed by this SDK key, so
-# skip the trust check on input and sign the resulting ADB index with the same key.
+# Like the SDK package/index target: individual APKs built by apk mkpkg do not carry
+# embedded signatures, so skip input trust checks and sign packages.adb with the SDK key.
 (
 	cd "$out_dir"
 	"$host_apk" mkndx --allow-untrusted --sign "$sdk/private-key.pem" \
