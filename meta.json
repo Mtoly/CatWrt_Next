@@ -1,30 +1,30 @@
 {
   "schema": 1,
-  "latest": "v26.12.8",
+  "latest": "v26.12.9",
   "base": "immortalwrt-25.12.2",
-  "released": "2026-11-24",
-  "notes_url": "https://github.com/Mtoly/CatWrt_Next/releases/tag/v26.12.8",
+  "released": "2026-11-25",
+  "notes_url": "https://github.com/Mtoly/CatWrt_Next/releases/tag/v26.12.9",
   "images": {
     "x86_64": {
       "squashfs-efi": {
-        "url": "https://github.com/Mtoly/CatWrt_Next/releases/download/v26.12.8/catwrt-next-v26.12.8-x86-64-squashfs-efi.img.gz",
-        "sha256": "2cdb69e3344ae6a34de9a89bf64f4e4a81a768774d4b2db79652147cb1eca02b",
-        "size": 88485952
+        "url": "https://github.com/Mtoly/CatWrt_Next/releases/download/v26.12.9/catwrt-next-v26.12.9-x86-64-squashfs-efi.img.gz",
+        "sha256": "9bf7d851ee0cf6e6ce6d71bbe00b3531af26d99a59f9c08f833b45931ca529f3",
+        "size": 88487873
       },
       "squashfs-bios": {
-        "url": "https://github.com/Mtoly/CatWrt_Next/releases/download/v26.12.8/catwrt-next-v26.12.8-x86-64-squashfs-bios.img.gz",
-        "sha256": "e9a45e8ab6b77d50deb844b9adccfd20eaef78368ec7391e5b31c0664787cd54",
-        "size": 88280963
+        "url": "https://github.com/Mtoly/CatWrt_Next/releases/download/v26.12.9/catwrt-next-v26.12.9-x86-64-squashfs-bios.img.gz",
+        "sha256": "f7873d4f27747e0e402718f708dc0e7bb8555bd7f62e3b413e73ff85a6388efc",
+        "size": 88284046
       },
       "ext4-efi": {
-        "url": "https://github.com/Mtoly/CatWrt_Next/releases/download/v26.12.8/catwrt-next-v26.12.8-x86-64-ext4-efi.img.gz",
-        "sha256": "86a1b238baedd7316154b916c5f3fef2eb2c9585a17864caba6f025227eb56aa",
-        "size": 110569686
+        "url": "https://github.com/Mtoly/CatWrt_Next/releases/download/v26.12.9/catwrt-next-v26.12.9-x86-64-ext4-efi.img.gz",
+        "sha256": "6ce75617542848c9e5b1920bcb22bb0115ad3917ffd5df1cb79dd5f63a9d3947",
+        "size": 110582205
       },
       "ext4-bios": {
-        "url": "https://github.com/Mtoly/CatWrt_Next/releases/download/v26.12.8/catwrt-next-v26.12.8-x86-64-ext4-bios.img.gz",
-        "sha256": "b03468ea1af5a84d60171e3e511cc5ff8526dac2288afb5c498dd2351a08b149",
-        "size": 110375520
+        "url": "https://github.com/Mtoly/CatWrt_Next/releases/download/v26.12.9/catwrt-next-v26.12.9-x86-64-ext4-bios.img.gz",
+        "sha256": "225187eeab9f7c80a33cfb4beee851af297cdefe49f536226829fd9007f241b3",
+        "size": 110365343
       }
     }
   }
