@@ -19,6 +19,7 @@ chmod +x "$TEST_ROOT/bin/uci"
 # Redirect filesystem probes and init calls into the isolated fixture tree.
 sed -e "s|/etc/init.d/|$TEST_ROOT/init.d/|g" \
 	-e "s|/www/luci-static/argon|$TEST_ROOT/argon|g" \
+	-e "s|/www/logs.txt|$TEST_ROOT/www/logs.txt|g" \
 	-e "s|/usr/share/catwrt/|$TEST_ROOT/share/|g" \
 	-e "s|/etc/banner|$TEST_ROOT/banner|g" \
 	-e "s|/etc/shadow|$TEST_ROOT/shadow|g" \
@@ -268,3 +269,24 @@ EOF
 	done
 done
 printf 'PASS: exact password cleanup runs only for uninitialized settings\n'
+
+# Upgrade runs must remove any legacy web-root diagnostic log and fail if removal fails.
+mkdir -p "$TEST_ROOT/www"
+cat >"$TEST_ROOT/state" <<'EOF'
+system.@system[0].hostname=CatWrt
+network.lan.ipaddr=192.168.1.4/24
+system.@imm_init[0].catwrt_init=1
+EOF
+printf 'network.wan.%s=demo-legacy-cred\n' 'pass''word' >"$TEST_ROOT/www/logs.txt"
+sh "$TEST_ROOT/defaults"
+[ ! -e "$TEST_ROOT/www/logs.txt" ]
+[ ! -L "$TEST_ROOT/www/logs.txt" ]
+printf 'PASS: sysupgrade removes legacy /www/logs.txt even when already initialized\n'
+
+mkdir -p "$TEST_ROOT/www/logs.txt"
+if sh "$TEST_ROOT/defaults" 2>/dev/null; then
+	printf 'Expected failure when legacy /www/logs.txt cannot be removed\n' >&2
+	exit 1
+fi
+rmdir "$TEST_ROOT/www/logs.txt"
+printf 'PASS: failed removal of legacy /www/logs.txt is not ignored\n'
